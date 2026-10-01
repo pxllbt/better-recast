@@ -39,11 +39,13 @@ Scope {
         return out;
     }
     readonly property string focusedName: Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
-    // A window/portal capture counts as the screen focused when it started,
-    // so the overlay doesn't hop screens as focus moves during it.
-    property string captureFocus: ""
+    // When the target doesn't name a screen (window/portal, or a region not
+    // picked yet), the screen focused when the overlay appeared stands in for
+    // it. Frozen so the overlay doesn't hop away from the pointer.
+    property string anchorFocus: ""
+    onEligibleChanged: anchorFocus = eligible ? (anchorFocus || focusedName) : ""
     onCaptureKindChanged: {
-        captureFocus = captureKind === "" ? "" : (captureFocus || focusedName);
+        anchorFocus = eligible ? focusedName : "";
         Qt.callLater(flash);
     }
 
@@ -55,12 +57,17 @@ Scope {
                 type: "monitor",
                 name: cfg.monitorName || cfg._lastMonitor || ""
             };
+        if (cfg.targetMode === "region" && (cfg.region || cfg._lastRegion))
+            return {
+                type: "region",
+                geometry: cfg.region || cfg._lastRegion
+            };
         return {
             type: "portal"
         };
     }
     readonly property var placement: eligible
-        ? Placement.choosePlacement(cfg.overlayMode, Placement.recordedScreens(target, screenList, captureFocus || focusedName), screenList, cfg.overlayEdge)
+        ? Placement.choosePlacement(cfg.overlayMode, Placement.recordedScreens(target, screenList, anchorFocus || focusedName), screenList, cfg.overlayEdge)
         : null
     readonly property bool canPin: placement !== null && placement.kind === "peek"
     readonly property string kind: !placement ? "" : (canPin && cfg.overlayPinned ? "pinned" : placement.kind)

@@ -175,6 +175,12 @@ test("auto puts the overlay on the free screen, facing the recording", () => {
     assert.deepEqual(Placement.choosePlacement("auto", ["DP-10"], TWO, "right"), { screen: "DP-9", edge: "left", kind: "pinned" });
 });
 
+test("a region on one screen keeps the overlay on the other, wherever focus is", () => {
+    const region = { type: "region", geometry: "1261x686+6487+742" };
+    for (const focused of ["DP-9", "DP-10"])
+        assert.deepEqual(Placement.choosePlacement("auto", Placement.recordedScreens(region, TWO, focused), TWO, "right"), { screen: "DP-10", edge: "right", kind: "pinned" });
+});
+
 test("auto with no free screen peeks from the edge setting", () => {
     assert.deepEqual(Placement.choosePlacement("auto", ["DP-10"], [DP10], "top"), { screen: "DP-10", edge: "top", kind: "peek" });
     assert.deepEqual(Placement.choosePlacement("auto", ["DP-9", "DP-10"], TWO, "left"), { screen: "DP-9", edge: "left", kind: "peek" });

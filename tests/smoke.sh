@@ -57,6 +57,17 @@ for f in Service.qml BarWidget.qml Panel.qml; do
   fi
 done
 
+echo_title "JS logic"
+if have node; then
+  if node "$PLUGIN_DIR/tests/logic.test.js"; then
+    ok "logic.test.js"
+  else
+    bad "logic.test.js"
+  fi
+else
+  echo "  node not found; skipping JS logic tests"
+fi
+
 echo_title "Update checker script"
 if [ -x "$PLUGIN_DIR/scripts/check-update.sh" ]; then
   if JSON=$(bash "$PLUGIN_DIR/scripts/check-update.sh" 2>/dev/null); then

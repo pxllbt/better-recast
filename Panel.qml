@@ -1,10 +1,12 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Quickshell
 import Quickshell.Io
 import qs.Ui
 import qs.Commons
 import "Config.js" as Config
+import "PostProcess.js" as PostProcess
 
 // pix.recast control panel — the settings popup anchored to the bar widget
 // (right click) or `omarchy-shell shell summon pix.recast`. Reads recording state
@@ -295,6 +297,19 @@ Panel {
         return list;
     }
 
+    // Video apps from `gio mime video/mp4` that resolve to a desktop entry:
+    // [{ value: "<id>.desktop", label }].
+    property var openWithApps: []
+
+    function openWithOptions() {
+        var opts = [{ value: "", label: "None" }].concat(root.openWithApps);
+        var cur = root.cfg.postProcessApp || "";
+        if (cur !== "" && cur !== "custom" && !opts.some(function (o) { return o.value === cur; }))
+            opts.push({ value: cur, label: cur.replace(/\.desktop$/, "") });
+        opts.push({ value: "custom", label: "Custom…" });
+        return opts;
+    }
+
     // Numeric config read that never coerces 0 to the fallback.
     function cfgNum(key, fallback) {
         var v = root.cfg ? root.cfg[key] : undefined;
@@ -434,6 +449,7 @@ Panel {
     // KeyboardPanel shows it anchored to the bar button.
     function open() {
         root.controller.show();
+        mimeAppsProc.running = true;
         if (root.service && typeof root.service.refreshGpuInfo === "function")
             root.service.refreshGpuInfo();
     }
@@ -467,6 +483,7 @@ Panel {
                 || replayBitrateField.field.activeFocus
                 || replaySaveLengthField.field.activeFocus
                 || outputDirField.activeFocus
+                || postProcessCommandField.activeFocus
             onCloseRequested: root.requestClose()
             onActivateRequested: root.toggleRecording()
             onTextKey: function(t) {
@@ -2024,6 +2041,84 @@ Panel {
                         }
                     }
 
+                    // ---- After capture --------------------------------------------------
+                    Column {
+                        width: parent.width
+                        spacing: Style.space(8)
+
+                        PanelSectionHeader {
+                            text: "AFTER CAPTURE"
+                            foreground: root.foreground
+                            fontFamily: root.fontFamily
+                        }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: Style.space(10)
+                            rowSpacing: Style.space(8)
+
+                            Text {
+                                text: "Open with"
+                                color: root.muted
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                            }
+                            Dropdown {
+                                label: ""
+                                value: root.cfg.postProcessApp || ""
+                                options: root.openWithOptions()
+                                foreground: root.foreground
+                                background: root.background
+                                accent: root.accent
+                                fontFamily: root.fontFamily
+                                Layout.fillWidth: true
+                                onChanged: function (v) {
+                                    root.setConfig("postProcessApp", v);
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            width: parent.width
+                            spacing: Style.space(6)
+                            visible: root.cfg.postProcessApp === "custom"
+
+                            TextField {
+                                id: postProcessCommandField
+                                Layout.fillWidth: true
+                                text: root.cfg.postProcessCommand || ""
+                                foreground: root.foreground
+                                accent: root.accent
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                placeholderText: "Command or app path"
+                                onEditingFinished: root.setConfig("postProcessCommand", text)
+                            }
+
+                            Button {
+                                text: "Browse…"
+                                foreground: root.foreground
+                                accent: root.accent
+                                fontFamily: root.fontFamily
+                                fontSize: Style.font.caption
+                                onClicked: pickAppProc.running = true
+                            }
+                        }
+
+                        Text {
+                            text: root.cfg.postProcessApp === "custom"
+                                ? "Runs with the saved file as its last argument (\"$1\")."
+                                : "Opens each saved recording and replay clip."
+                            color: root.muted
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.bodySmall
+                            wrapMode: Text.WordWrap
+                            width: parent.width
+                        }
+                    }
+
                     // ---- UPDATE --------------------------------------------------------
                     Column {
                         width: parent.width
@@ -2257,6 +2352,43 @@ Panel {
                 if (dir && !dir.match(/^cancelled$/i))
                     root.setConfig("outputDir", dir);
             }
+        }
+    }
+
+    Process {
+        id: mimeAppsProc
+        command: ["gio", "mime", "video/mp4"]
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                var apps = [];
+                var ids = PostProcess.parseMimeApps(text);
+                for (var i = 0; i < ids.length; i++) {
+                    var entry = DesktopEntries.byId(ids[i].replace(/\.desktop$/, ""));
+                    if (entry && entry.name)
+                        apps.push({ value: ids[i], label: entry.name });
+                }
+                root.openWithApps = apps;
+            }
+        }
+    }
+
+    // omarchy-file-select exits 1 when nothing was picked, 2 when the chooser
+    // itself failed.
+    Process {
+        id: pickAppProc
+        command: ["omarchy-file-select", "--title", "Choose application"]
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                var picked = text.trim();
+                if (picked)
+                    root.setConfig("postProcessCommand", PostProcess.shellQuote(picked));
+            }
+        }
+        onExited: function (exitCode) {
+            if (exitCode === 2)
+                root._pushError("File chooser failed to open");
         }
     }
 

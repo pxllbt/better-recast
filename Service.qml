@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import "Config.js" as Config
 import "GpuProbe.js" as GpuProbe
+import "PostProcess.js" as PostProcess
 
 // pix.recast service — owns gpu-screen-recorder lifecycle, GPU detection, config
 // persistence and the IPC socket used for pause/resume/stop.
@@ -605,6 +606,7 @@ Item {
         } else if (saved) {
             root._lastSavedPath = saved;
             sendNotification("Screen recording saved", saved, "normal", 10000);
+            runPostProcess(saved);
         }
         restoreVolume();
     }
@@ -632,6 +634,12 @@ Item {
             sendNotification(wasStream ? "Stream ended unexpectedly" : "Screen recording failed", msg, "critical", 8000);
         }
         restoreVolume();
+    }
+
+    function runPostProcess(path) {
+        var cmd = PostProcess.command(config, path);
+        if (cmd)
+            Quickshell.execDetached(cmd);
     }
 
     function sendNotification(summary, body, urgency, timeout) {
@@ -778,9 +786,11 @@ Item {
                 if (out.indexOf("error") === 0) {
                     root.sendNotification("Replay save failed", out, "critical", 8000);
                 } else {
-                    if (out !== "ok")
-                        root._lastSavedPath = out;
                     root.sendNotification("Replay saved", out, "normal", 10000);
+                    if (out !== "ok") {
+                        root._lastSavedPath = out;
+                        root.runPostProcess(out);
+                    }
                 }
             }
         }

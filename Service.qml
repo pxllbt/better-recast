@@ -59,8 +59,6 @@ Item {
     property string recordingState: state
     property bool recordingIsStream: false
     property string recordingFile: ""
-    property string recordingPath: ""
-    property int recordingPid: 0
     property int recordingElapsed: 0
     property int recordingBaseSec: 0
     property double recordingBaseMs: 0
@@ -177,6 +175,15 @@ Item {
     function startReplay() {
         if (active || busy || state === "replay")
             return;
+        // Never launch a second recorder on top of a live one: `running = true`
+        // on an already-running Process emits no runningChanged, so the
+        // starting->recording promotion never happens and the state machine
+        // sticks on "starting". Reap the orphan and let the user retry.
+        if (gsr.running) {
+            errorMessage = "Closed a leftover recorder session — press record again";
+            stop();
+            return;
+        }
         errorMessage = "";
         applyVolume();
 
@@ -206,6 +213,7 @@ Item {
         lastTarget = describeTarget(target) + " · replay buffer (" + String(config.replaySeconds || 60) + "s)";
         state = "starting";
         recordingElapsed = 0;
+        startWatchdog.restart();
         gsr.command = ["gpu-screen-recorder"].concat(args, ["-o", outputDir, "-ipc", ipcSocketPath]);
         prepareDir.command = ["bash", "-c", "mkdir -p " + outputDir + " && mkdir -p " + runtimeDir];
         prepareDir.running = true;
@@ -234,7 +242,7 @@ Item {
     }
 
     function stopReplay() {
-        if (state !== "replay")
+        if (state !== "replay" && state !== "starting")
             return;
         // `stop` in replay mode closes the buffer without saving it.
         _wasReplay = true;
@@ -267,6 +275,13 @@ Item {
     function start(targetType) {
         if (active || busy)
             return;
+        // See startReplay(): a live gsr would swallow this launch silently and
+        // strand state on "starting". Reap it instead.
+        if (gsr.running) {
+            errorMessage = "Closed a leftover recorder session — press record again";
+            stop();
+            return;
+        }
         errorMessage = "";
         applyVolume();
 
@@ -312,6 +327,7 @@ Item {
             lastTarget = describeTarget(target) + " · " + config.streamPlatform;
             state = "starting";
             recordingElapsed = 0;
+            startWatchdog.restart();
             gsr.command = ["gpu-screen-recorder"].concat(args);
             gsr.environment = {"GSR_AUTH": streamKey};
             gsr.running = true;
@@ -334,6 +350,7 @@ Item {
         lastTarget = describeTarget(target);
         state = "starting";
         recordingElapsed = 0;
+        startWatchdog.restart();
         gsr.command = args;
         gsr.running = true;
 
@@ -348,7 +365,10 @@ Item {
     }
 
     function stop() {
-        if (!active && state !== "starting")
+        // gsr.running matters as much as `active`: a session can outlive our
+        // state (e.g. mode switched away from replay while the buffer kept
+        // recording). Without this, stop() no-ops and the orphan never dies.
+        if (!active && state !== "starting" && !gsr.running)
             return;
         state = "stopping";
         stopTimeout.restart();
@@ -388,8 +408,11 @@ Item {
         copy[key] = value;
         config = Config.normalize(copy);
         persistConfig();
-        if (key === "mode" && config.mode !== "replay" && state === "replay")
-            state = "idle";
+        // Leaving replay mode while the buffer is live used to just reset the
+        // state, which orphaned a still-running gsr (and stranded the next
+        // launch on "starting"). Shut the buffer down properly instead.
+        if (key === "mode" && config.mode !== "replay" && (state === "replay" || gsr.running))
+            stopReplay();
         if (key === "audioVolume" || key === "audioMicVolume" || key === "audioDesktop" || key === "audioMicrophone")
             applyVolume();
         if (key === "webcamEnabled" || key === "webcamDevice" || key === "webcamSize")
@@ -453,10 +476,6 @@ Item {
 
     function refreshConfig() {
         configFileView.reload();
-    }
-
-    function effective(cfg) {
-        return Config.applyGpuProfile(cfg || config, gpuInfo);
     }
 
     // ── Internals ──
@@ -827,12 +846,39 @@ Item {
         id: fallbackStop
     }
 
+    // gsr exposes no "ready" signal, so `runningChanged` is the only hint that a
+    // launch took. If that hint is missed for any reason the state machine can
+    // sit on "starting" forever while the UI claims a file is being written.
+    // This watchdog reconciles the state against the real process on a timer.
+    Timer {
+        id: startWatchdog
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            if (root.state !== "starting")
+                return;
+            if (gsr.running) {
+                // Alive after the grace period: adopt it. The session is real,
+                // it just didn't announce itself.
+                root.state = root._startingReplay ? "replay" : "recording";
+            } else {
+                root.onRecordingFailed("gpu-screen-recorder did not start");
+            }
+            root._startingReplay = false;
+        }
+    }
+
     Timer {
         id: stopTimeout
         interval: 6000
         onTriggered: {
             if (gsr.running) {
-                fallbackStop.command = ["bash", "-c", "pkill -INT -x gpu-screen-recorder || true"];
+                // Match on this session's IPC socket rather than the bare process
+                // name: `pkill -x gpu-screen-recorder` would also SIGINT an
+                // unrelated recorder the user is running (another plugin, a
+                // second instance, a hand-typed capture).
+                fallbackStop.command = ["bash", "-c",
+                    "pkill -INT -f 'gpu-screen-recorder.*-ipc " + ipcSocketPath + "' || true"];
                 fallbackStop.running = true;
             }
         }

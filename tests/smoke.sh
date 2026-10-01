@@ -57,21 +57,6 @@ for f in Service.qml BarWidget.qml Panel.qml; do
   fi
 done
 
-echo_title "Update checker script"
-if [ -x "$PLUGIN_DIR/scripts/check-update.sh" ]; then
-  if JSON=$(bash "$PLUGIN_DIR/scripts/check-update.sh" 2>/dev/null); then
-    if echo "$JSON" | jq -e '.update_available != null and .current_version != null and .new_version != null' >/dev/null 2>&1; then
-      ok "check-update.sh emits valid JSON"
-    else
-      bad "check-update.sh JSON shape"
-    fi
-  else
-    bad "check-update.sh runs"
-  fi
-else
-  bad "check-update.sh is executable"
-fi
-
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

@@ -31,6 +31,12 @@ Panel {
     // Optimistic override for config keys set while the service is unreachable.
     // Cleared when the state file is next polled and confirms the change.
     property var _pendingConfig: ({})
+    // When each optimistic key was written. Without this an override the
+    // service never accepts (IPC error, shell.json write lost) sticks forever
+    // and the panel keeps showing the wrong tab even though the real mode is
+    // unchanged.
+    property var _pendingAt: ({})
+    readonly property int _pendingTimeoutMs: 5000
     // Only clear pending config when the state file has caught up to our
     // optimistic change — otherwise the UI flickers back between the
     // optimistic update and the 2 s poll interval.
@@ -44,8 +50,26 @@ Panel {
                 break;
             }
         }
-        if (allConfirmed)
+        if (allConfirmed) {
             root._pendingConfig = ({});
+            root._pendingAt = ({});
+            return;
+        }
+        // Drop any override the service hasn't picked up in time so the panel
+        // falls back to the real persisted value rather than lying forever.
+        var now = Date.now();
+        var keptCfg = {};
+        var keptAt = {};
+        for (var j in root._pendingConfig) {
+            if (now - (root._pendingAt[j] || 0) < root._pendingTimeoutMs) {
+                keptCfg[j] = root._pendingConfig[j];
+                keptAt[j] = root._pendingAt[j];
+            }
+        }
+        if (Object.keys(keptCfg).length !== Object.keys(root._pendingConfig).length) {
+            root._pendingConfig = keptCfg;
+            root._pendingAt = keptAt;
+        }
     }
     // Error message: pulled from the live service, the state file, or set
     // locally for fallback-path errors (e.g. region picker cancelled).
@@ -68,21 +92,19 @@ Panel {
     property var hostWidget: null
     property string omarchyPath: ""
 
-    // ---- update check -----------------------------------------------------
-    property bool updateAvailable: false
-    property string updateCurrentVersion: "1.1.0"
-    property string updateNewVersion: ""
-    property int updateCommitsBehind: 0
-    property bool updateChecking: false
-    property string updateError: ""
 
     // ---- theme --------------------------------------------------------------
-    readonly property color foreground: Color.foreground
-    readonly property color background: Color.background
-    readonly property color accent: Color.accent
-    readonly property color muted: Color.muted
-    readonly property color urgent: Color.urgent
-    readonly property string fontFamily: Style.font.family
+    // Writable, not readonly, so a host that embeds this panel can supply its
+    // own palette. Defaults are Omarchy's, which is right when the panel is
+    // summoned from the Omarchy bar. A replacement bar (e.g. Ukishima) renders
+    // this panel with its own generated theme, and the difference is otherwise
+    // glaring — the panel would be the one surface in that bar not matching.
+    property color foreground: Color.foreground
+    property color background: Color.background
+    property color accent: Color.accent
+    property color muted: Color.muted
+    property color urgent: Color.urgent
+    property string fontFamily: Style.font.family
 
     // Effective config: live service config → state file config (with optimistic
     // overrides) → settings → defaults
@@ -333,6 +355,9 @@ Panel {
         var next = Object.assign({}, root._pendingConfig);
         next[key] = value;
         root._pendingConfig = next;
+        var stamps = Object.assign({}, root._pendingAt);
+        stamps[key] = Date.now();
+        root._pendingAt = stamps;
     }
 
     // Stream URL/key are session-only unless "remember" is on, so the key never
@@ -1529,6 +1554,22 @@ Panel {
                                 wrapMode: Text.WordWrap
                                 width: parent.width
                             }
+
+                            Text {
+                                text: "Noise gate"
+                                color: root.muted
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                            }
+                            ToggleSwitch {
+                                checked: root.cfg.audioNoiseGate === true
+                                foreground: root.foreground
+                                accent: root.accent
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                                onToggled: root.setConfig("audioNoiseGate", !root.cfg.audioNoiseGate)
+                            }
                         }
 
                         Column {
@@ -1991,84 +2032,6 @@ Panel {
                         }
                     }
 
-                    // ---- UPDATE --------------------------------------------------------
-                    Column {
-                        width: parent.width
-                        spacing: Style.space(6)
-
-                        PanelSectionHeader {
-                            text: "UPDATE"
-                            foreground: root.foreground
-                            fontFamily: root.fontFamily
-                        }
-
-                        Row {
-                            width: parent.width
-                            spacing: Style.space(8)
-                            visible: !root.updateAvailable || root.updateChecking
-
-                            Text {
-                                text: root.updateChecking
-                                    ? "Checking for updates…"
-                                    : "Up to date" + (root.updateNewVersion !== "" ? " (v" + root.updateCurrentVersion + ")" : "")
-                                color: root.muted
-                                font.family: root.fontFamily
-                                font.pixelSize: Style.font.caption
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            Button {
-                                text: "Check"
-                                onClicked: root.checkForUpdates()
-                            }
-                        }
-
-                        Row {
-                            width: parent.width
-                            spacing: Style.space(8)
-                            visible: root.updateAvailable && !root.updateChecking
-
-                            Text {
-                                text: "v" + root.updateCurrentVersion + " → v" + root.updateNewVersion + (root.updateCommitsBehind > 0 ? " (" + root.updateCommitsBehind + " commits)" : "")
-                                textFormat: Text.PlainText
-                                color: root.accent
-                                font.family: root.fontFamily
-                                font.pixelSize: Style.font.caption
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            Item {
-                                Layout.fillWidth: true
-                            }
-
-                            Button {
-                                text: "Copy command"
-                                onClicked: {
-                                    copyUpdateCmdProc.command = ["sh", "-c", "printf '%s' \"$1\" | wl-copy", "_", "omarchy plugin update pix.recast"];
-                                    copyUpdateCmdProc.running = true;
-                                }
-                            }
-
-                            Button {
-                                text: "Update"
-                                accent: root.accent
-                                onClicked: {
-                                    Util.execDetached("omarchy-launch-floating-terminal-with-presentation 'omarchy plugin update pix.recast'");
-                                }
-                            }
-                        }
-
-                        Text {
-                            visible: root.updateError !== "" && !root.updateChecking
-                            text: "Update check failed — " + root.updateError
-                            color: root.urgent
-                            font.family: root.fontFamily
-                            font.pixelSize: Style.font.caption
-                            wrapMode: Text.WordWrap
-                            width: parent.width
-                        }
-                    }
-
                     PanelSeparator {
                         foreground: root.foreground
                     }
@@ -2225,77 +2188,5 @@ Panel {
                     root.setConfig("outputDir", dir);
             }
         }
-    }
-
-    // ---- Update checker ---------------------------------------------------
-    readonly property string updateCheckerPath: {
-        var u = Qt.resolvedUrl("scripts/check-update.sh").toString();
-        return decodeURIComponent(u.replace(/^file:\/\//, ""));
-    }
-
-    Process {
-        id: updateCheckProc
-        command: [root.updateCheckerPath, "check"]
-        stdout: StdioCollector {
-            waitForEnd: true
-                    onStreamFinished: {
-                        var line = String(text || "").trim();
-                        if (line.length > 65536)
-                            line = line.substring(0, 65536);
-                        if (!line) return;
-                        try {
-                            var data = JSON.parse(line);
-                            root.updateAvailable = data.update_available === true;
-                            root.updateCurrentVersion = data.current_version || "1.1.0";
-                            root.updateNewVersion = data.new_version || "";
-                            root.updateCommitsBehind = data.commits_behind || 0;
-                            root.updateError = data.error || "";
-                        } catch (e) {}
-                        root.updateChecking = false;
-                    }
-        }
-        onExited: function (exitCode) {
-            updateCheckTimer.stop();
-            root.updateChecking = false;
-        }
-    }
-    Timer {
-        id: updateCheckTimer
-        interval: 30000
-        repeat: false
-        onTriggered: {
-            if (updateCheckProc.running) {
-                updateCheckProc.running = false;
-                root.updateChecking = false;
-            }
-        }
-    }
-
-    Timer {
-        id: updateCheckStartup
-        interval: 10000
-        running: true
-        repeat: false
-        onTriggered: root.checkForUpdates()
-    }
-
-    Timer {
-        id: updateCheckRecurring
-        interval: 21600000
-        running: true
-        repeat: true
-        onTriggered: root.checkForUpdates()
-    }
-
-    function checkForUpdates() {
-        root.updateChecking = true;
-        root.updateError = "";
-        if (!updateCheckProc.running)
-            updateCheckProc.running = true;
-    }
-
-    Process {
-        id: copyUpdateCmdProc
-        running: false
     }
 }

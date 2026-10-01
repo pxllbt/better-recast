@@ -13,7 +13,10 @@ automatic hardware and encoder detection.
 ## Features
 
 - One-click record/stop from the bar widget (left click toggle, right click panel)
-- **Volume sliders** for desktop audio and microphone (applied via PipeWire/wpctl)
+- **Three modes** — record, live stream, or instant replay — switchable from the panel
+- **Live streaming** to TikTok / Twitch / YouTube / any RTMP endpoint, with per-platform encode presets (H.264 + AAC, CBR, suggested resolution/fps/bitrate) and an optional local backup copy
+  - The stream key is held in memory for the session and passed to gsr via the `GSR_AUTH` environment variable, so it never appears in `/proc/<pid>/cmdline` or in `shell.json` unless you explicitly enable "remember key"
+- **Volume control** for desktop audio and microphone — the levels are read before recording, the requested levels are applied via `wpctl`, and your previous levels are restored when recording stops
 - **Audio device selectors** for desktop and mic (fed by `gpu-screen-recorder --list-audio-devices`, drive gsr's `-a` capture sources directly)
 - **Audio codec (AAC/Opus) and bitrate** control (0–512 kbps, auto when 0)
 - **Noise gate** via FFmpeg's `afftdn`+`agate` filter
@@ -48,15 +51,18 @@ omarchy-shell shell toggle pix.recast   # open the control panel
 omarchy-shell bar layout right add pix.recast   # add the bar indicator
 ```
 
-## Update
+## Updating
 
-The control panel checks for updates automatically (~6h interval) and shows a banner when a new version is available. You can also check manually from the panel or run:
+The plugin does **not** check for or apply updates on its own — there is no
+in-app updater, and nothing runs in the background. Update deliberately:
 
 ```
-omarchy plugin update pix.recast
+omarchy plugin update pix.recast --yes
 ```
 
-This fetches the latest changes from `origin/main`, shows a diff, and fast-forwards the checkout after validation. Updates are always manual and require your confirmation.
+Note this is a hard reset to `origin/main`: any local edits to the plugin files
+are discarded. Fork and re-apply, or keep your changes in a commit you re-apply
+afterwards.
 
 ## Development
 

@@ -4,7 +4,6 @@
 // postProcessCommand). Used by Service.qml after a save and by Panel.qml for
 // the "Open with" list.
 
-// Desktop ids from `gio mime <type>` output, default app first, no repeats.
 function parseMimeApps(text) {
   var ids = []
   var lines = String(text || "").split("\n")
@@ -20,7 +19,6 @@ function shellQuote(s) {
   return "'" + String(s).replace(/'/g, "'\\''") + "'"
 }
 
-// argv to launch for `path`, or null when nothing is configured.
 function command(config, path) {
   var app = String(config.postProcessApp || "")
   if (!path || app === "")

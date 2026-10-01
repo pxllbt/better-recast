@@ -35,7 +35,6 @@ function gap(a, b) {
   return Math.sqrt(dx * dx + dy * dy)
 }
 
-// The side of `free` that faces `target`.
 function facingEdge(free, target) {
   var dx = (target.x + target.w / 2) - (free.x + free.w / 2)
   var dy = (target.y + target.h / 2) - (free.y + free.h / 2)
@@ -44,7 +43,6 @@ function facingEdge(free, target) {
   return dy > 0 ? "bottom" : "top"
 }
 
-// Names of the screens a capture target shows, focused screen first.
 function recordedScreens(target, screens, focusedName) {
   var names = []
   if (target && target.type === "monitor") {

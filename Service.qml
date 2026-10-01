@@ -125,7 +125,6 @@ Item {
     readonly property string ipcScriptPath: pluginPath("scripts/gsr-ipc.py")
     readonly property string readBindsScriptPath: pluginPath("scripts/read-binds.lua")
 
-    // Absolute path of a file shipped with this plugin.
     function pluginPath(relative) {
         var s = String(Qt.resolvedUrl(relative));
         if (s.indexOf("file://") === 0)

@@ -13,6 +13,8 @@ var ACTIONS = [
   { id: "saveReplay", ipc: "saveReplay", label: "Save replay", letter: "R", configKey: "bindSaveReplay", contexts: ["replay"] }
 ]
 
+var SOURCE_LABELS = { override: "plugin", config: "bindings.lua", auto: "auto", none: "not bound" }
+
 // Older bindings.lua entries that still mean an action above.
 var LEGACY_IPC = { pause: "pause", resume: "pause" }
 
@@ -115,7 +117,6 @@ function isTaken(hyprBinds, combo, prefix) {
   return bindsOn(hyprBinds, combo).some(function (b) { return !isOurs(b, prefix) })
 }
 
-// Every combo that currently carries one of our runtime binds.
 function ownedCombos(hyprBinds, prefix) {
   var out = []
   if (!Array.isArray(hyprBinds))

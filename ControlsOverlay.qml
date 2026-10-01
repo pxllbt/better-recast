@@ -117,13 +117,6 @@ Scope {
     }
     readonly property var actions: Binds.actionsFor(previewing ? "record" : captureKind)
 
-    readonly property var sourceLabels: ({
-            override: "plugin",
-            config: "bindings.lua",
-            auto: "auto",
-            none: "not bound"
-        })
-
     function formatElapsed(sec) {
         var pad = function (n) {
             return n < 10 ? "0" + n : String(n);
@@ -467,7 +460,7 @@ Scope {
                                 }
 
                                 Text {
-                                    text: row.bind.conflict ? "not bound" : (root.sourceLabels[row.bind.source] || "")
+                                    text: row.bind.conflict ? "not bound" : (Binds.SOURCE_LABELS[row.bind.source] || "")
                                     color: Color.muted
                                     font.family: Style.font.family
                                     font.pixelSize: Style.font.bodySmall

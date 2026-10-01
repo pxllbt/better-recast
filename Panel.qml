@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Ui
 import qs.Commons
+import "Binds.js" as Binds
 import "Config.js" as Config
 import "PostProcess.js" as PostProcess
 
@@ -297,9 +298,55 @@ Panel {
         return list;
     }
 
-    // Video apps from `gio mime video/mp4` that resolve to a desktop entry:
-    // [{ value: "<id>.desktop", label }].
-    property var openWithApps: []
+    readonly property var resolvedBinds: root.service
+        ? (root.service.resolvedBinds || {})
+        : (root.serviceState ? (root.serviceState.resolvedBinds || {}) : {})
+    // Action id of the keybind field being edited ("" = none), and the
+    // action ids whose last entry wasn't a valid combo.
+    property string _bindFieldFocus: ""
+    property var _bindErrors: ({})
+
+    function bindPlaceholder(actionId) {
+        var r = root.resolvedBinds[actionId];
+        if (!r || r.combo === "" || r.source === "override")
+            return "Automatic";
+        return r.combo + " (" + Binds.SOURCE_LABELS[r.source] + ")";
+    }
+
+    function setBindOverride(action, text) {
+        var t = String(text || "").trim();
+        var combo = t === "" ? "" : Binds.normalizeCombo(t);
+        var errors = Object.assign({}, root._bindErrors);
+        errors[action.id] = t !== "" && combo === "";
+        root._bindErrors = errors;
+        if (!errors[action.id] && combo !== (root.cfg[action.configKey] || ""))
+            root.setConfig(action.configKey, combo);
+    }
+
+    function setOverlayMode(mode) {
+        var current = root.cfg.overlayMode || "auto";
+        if (mode === current)
+            return;
+        // Docking a floating overlay restores the mode it was popped out of.
+        if (mode === "float")
+            root.setConfig("overlayPrevMode", current);
+        root.setConfig("overlayMode", mode);
+    }
+
+    // Desktop ids from `gio mime video/mp4`, and those of them that resolve
+    // to a desktop entry as [{ value: "<id>.desktop", label }]. Reading
+    // `applications` re-resolves once the entry scan (re)loads.
+    property var openWithIds: []
+    readonly property var openWithApps: {
+        var loaded = DesktopEntries.applications.values;
+        var apps = [];
+        for (var i = 0; i < root.openWithIds.length && loaded.length > 0; i++) {
+            var entry = DesktopEntries.byId(root.openWithIds[i].replace(/\.desktop$/, ""));
+            if (entry && entry.name)
+                apps.push({ value: root.openWithIds[i], label: entry.name });
+        }
+        return apps;
+    }
 
     function openWithOptions() {
         var opts = [{ value: "", label: "None" }].concat(root.openWithApps);
@@ -489,6 +536,8 @@ Panel {
                 || replaySaveLengthField.field.activeFocus
                 || outputDirField.activeFocus
                 || postProcessCommandField.activeFocus
+                || overlaySecondsField.field.activeFocus
+                || root._bindFieldFocus !== ""
             onCloseRequested: root.requestClose()
             onActivateRequested: root.toggleRecording()
             onTextKey: function(t) {
@@ -2046,6 +2095,211 @@ Panel {
                         }
                     }
 
+                    // ---- Controls overlay + keybinds -------------------------------------
+                    Column {
+                        width: parent.width
+                        spacing: Style.space(8)
+
+                        PanelSectionHeader {
+                            text: "CONTROLS OVERLAY"
+                            foreground: root.foreground
+                            fontFamily: root.fontFamily
+                        }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: Style.space(10)
+                            rowSpacing: Style.space(8)
+
+                            Text {
+                                text: "Mode"
+                                color: root.muted
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                            }
+                            Dropdown {
+                                label: ""
+                                value: root.cfg.overlayMode || "auto"
+                                options: [
+                                    {
+                                        value: "auto",
+                                        label: "Auto"
+                                    },
+                                    {
+                                        value: "pin",
+                                        label: "Pinned"
+                                    },
+                                    {
+                                        value: "timed",
+                                        label: "Show for N seconds"
+                                    },
+                                    {
+                                        value: "float",
+                                        label: "Floating"
+                                    },
+                                    {
+                                        value: "off",
+                                        label: "Off"
+                                    }
+                                ]
+                                foreground: root.foreground
+                                background: root.background
+                                accent: root.accent
+                                fontFamily: root.fontFamily
+                                Layout.fillWidth: true
+                                onChanged: function (v) {
+                                    root.setOverlayMode(v);
+                                }
+                            }
+
+                            Text {
+                                text: "Seconds"
+                                color: root.muted
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                            }
+                            NumberField {
+                                id: overlaySecondsField
+                                enabled: ["auto", "timed"].indexOf(root.cfg.overlayMode || "auto") !== -1
+                                opacity: enabled ? 1 : 0.5
+                                value: root.cfgNum("overlaySeconds", 5)
+                                from: 1
+                                to: 60
+                                stepSize: 1
+                                foreground: root.foreground
+                                accent: root.accent
+                                fontFamily: root.fontFamily
+                                fontSize: Style.font.caption
+                                onModified: function (v) {
+                                    root.setConfig("overlaySeconds", v);
+                                }
+                            }
+
+                            Text {
+                                text: "Edge"
+                                color: root.muted
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                            }
+                            Dropdown {
+                                label: ""
+                                value: root.cfg.overlayEdge || "right"
+                                options: [
+                                    {
+                                        value: "left",
+                                        label: "Left"
+                                    },
+                                    {
+                                        value: "right",
+                                        label: "Right"
+                                    },
+                                    {
+                                        value: "top",
+                                        label: "Top"
+                                    },
+                                    {
+                                        value: "bottom",
+                                        label: "Bottom"
+                                    }
+                                ]
+                                foreground: root.foreground
+                                background: root.background
+                                accent: root.accent
+                                fontFamily: root.fontFamily
+                                Layout.fillWidth: true
+                                onChanged: function (v) {
+                                    root.setConfig("overlayEdge", v);
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "The edge is used when no other monitor is free. With a free monitor, Auto keeps the overlay there."
+                            color: root.muted
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.bodySmall
+                            wrapMode: Text.WordWrap
+                            width: parent.width
+                        }
+
+                        PanelSectionHeader {
+                            text: "KEYBINDS"
+                            foreground: root.foreground
+                            fontFamily: root.fontFamily
+                        }
+
+                        Repeater {
+                            model: Binds.ACTIONS
+
+                            Column {
+                                id: bindRow
+
+                                required property var modelData
+                                readonly property var bind: root.resolvedBinds[modelData.id] || null
+
+                                width: parent ? parent.width : 0
+                                spacing: Style.space(4)
+
+                                RowLayout {
+                                    width: parent.width
+                                    spacing: Style.space(10)
+
+                                    Text {
+                                        text: bindRow.modelData.label
+                                        color: root.muted
+                                        font.family: root.fontFamily
+                                        font.pixelSize: Style.font.caption
+                                        Layout.preferredWidth: Style.space(110)
+                                        horizontalAlignment: Text.AlignRight
+                                    }
+
+                                    TextField {
+                                        Layout.fillWidth: true
+                                        text: root.cfg[bindRow.modelData.configKey] || ""
+                                        foreground: root.foreground
+                                        accent: root.accent
+                                        font.family: root.fontFamily
+                                        font.pixelSize: Style.font.caption
+                                        placeholderText: root.bindPlaceholder(bindRow.modelData.id)
+                                        onActiveFocusChanged: {
+                                            if (activeFocus)
+                                                root._bindFieldFocus = bindRow.modelData.id;
+                                            else if (root._bindFieldFocus === bindRow.modelData.id)
+                                                root._bindFieldFocus = "";
+                                        }
+                                        onEditingFinished: root.setBindOverride(bindRow.modelData, text)
+                                    }
+                                }
+
+                                Text {
+                                    visible: root._bindErrors[bindRow.modelData.id] === true
+                                        || (bindRow.bind !== null && bindRow.bind.conflict === true)
+                                    text: root._bindErrors[bindRow.modelData.id] === true
+                                        ? "Not a key combo. Use the form SUPER + ALT + P."
+                                        : "Another bind already uses this combo, so it is not bound."
+                                    color: root.urgent
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.bodySmall
+                                    wrapMode: Text.WordWrap
+                                    width: parent.width
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "Leave a field empty for an automatic free combo. Plugin binds exist only while a capture runs. A bindings.lua bind that runs omarchy-shell px-recast togglePause, stop, cancel or saveReplay is used as is."
+                            color: root.muted
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.bodySmall
+                            wrapMode: Text.WordWrap
+                            width: parent.width
+                        }
+                    }
+
                     // ---- After capture --------------------------------------------------
                     Column {
                         width: parent.width
@@ -2365,16 +2619,7 @@ Panel {
         command: ["gio", "mime", "video/mp4"]
         stdout: StdioCollector {
             waitForEnd: true
-            onStreamFinished: {
-                var apps = [];
-                var ids = PostProcess.parseMimeApps(text);
-                for (var i = 0; i < ids.length; i++) {
-                    var entry = DesktopEntries.byId(ids[i].replace(/\.desktop$/, ""));
-                    if (entry && entry.name)
-                        apps.push({ value: ids[i], label: entry.name });
-                }
-                root.openWithApps = apps;
-            }
+            onStreamFinished: root.openWithIds = PostProcess.parseMimeApps(text)
         }
     }
 

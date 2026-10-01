@@ -68,6 +68,18 @@ else
   echo "  node not found; skipping JS logic tests"
 fi
 
+echo_title "Hyprland bind scanner"
+if have lua; then
+  if diff <(lua "$PLUGIN_DIR/scripts/read-binds.lua" "$PLUGIN_DIR/tests/fixtures/hypr/hyprland.lua") \
+          "$PLUGIN_DIR/tests/fixtures/hypr/binds.tsv" >/dev/null; then
+    ok "read-binds.lua prints the fixture binds"
+  else
+    bad "read-binds.lua prints the fixture binds"
+  fi
+else
+  echo "  lua not found; skipping bind scanner"
+fi
+
 echo_title "Update checker script"
 if [ -x "$PLUGIN_DIR/scripts/check-update.sh" ]; then
   if JSON=$(bash "$PLUGIN_DIR/scripts/check-update.sh" 2>/dev/null); then

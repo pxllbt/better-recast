@@ -64,6 +64,12 @@ function defaultConfig() {
     replayOrganize: false,    // sort replays into date-based folders (-df)
     lowPower: false,          // reduce GPU clocks on AMD; pairs with content frame mode
 
+    // Capture-control keybinds: "" = automatic, else a combo like "SUPER + ALT + P"
+    bindPause: "",
+    bindStop: "",
+    bindCancel: "",
+    bindSaveReplay: "",
+
     // After capture: open the saved file with a desktop app or a command
     postProcessApp: "",       // "" = none | "<id>.desktop" | "custom"
     postProcessCommand: "",   // used when postProcessApp === "custom"; file is passed as "$1"
@@ -341,7 +347,8 @@ function normalize(raw) {
     if (k === "webcamDevice" && typeof v !== "string") v = d[k]
     if (k === "postProcessApp"
         && (typeof v !== "string" || (v !== "" && v !== "custom" && !/^[A-Za-z0-9._-]+\.desktop$/.test(v)))) v = d[k]
-    if (k === "postProcessCommand" && typeof v !== "string") v = d[k]
+    if ((k === "postProcessCommand" || k === "bindPause" || k === "bindStop"
+        || k === "bindCancel" || k === "bindSaveReplay") && typeof v !== "string") v = d[k]
     out[k] = v
   }
   return out

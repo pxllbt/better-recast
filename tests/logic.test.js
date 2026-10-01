@@ -61,5 +61,97 @@ test("normalize rejects a postProcessApp that is not a desktop id", () => {
     assert.equal(Config.normalize({ postProcessApp: "custom" }).postProcessApp, "custom");
 });
 
+const Binds = load("Binds.js");
+const PREFIX = Binds.DESCRIPTION_PREFIX;
+const takenBy = (...combos) => c => combos.includes(c);
+const action = id => Binds.ACTIONS.find(a => a.id === id);
+
+test("parseCombo/formatCombo normalize modifier order and case", () => {
+    assert.deepEqual(Binds.parseCombo("alt + super + p"), { mask: 72, key: "P" });
+    assert.equal(Binds.formatCombo(72, "p"), "SUPER + ALT + P");
+    assert.equal(Binds.normalizeCombo("shift+control+super+alt+f12"), "SUPER + CTRL + ALT + SHIFT + F12");
+    assert.equal(Binds.normalizeCombo("Print"), "PRINT");
+});
+
+test("parseCombo rejects junk", () => {
+    assert.equal(Binds.parseCombo(""), null);
+    assert.equal(Binds.parseCombo("SUPER + ALT"), null);
+    assert.equal(Binds.parseCombo("SUPER + P + Q"), null);
+    assert.equal(Binds.parseCombo('SUPER + "); os.exit()'), null);
+});
+
+test("parseConfigBinds finds px-recast exec binds, legacy pause included", () => {
+    const tsv = fs.readFileSync(path.join(__dirname, "fixtures/hypr/binds.tsv"), "utf8");
+    assert.deepEqual(Binds.parseConfigBinds(tsv), { cancel: "CTRL + ALT + PRINT", pause: "SUPER + ALT + SHIFT + P" });
+});
+
+test("parseConfigBinds keeps the first bind per action and ignores stopReplay", () => {
+    const tsv = "72\ta\tS\texec\tomarchy-shell px-recast stop\n76\tb\tS\texec\tomarchy-shell px-recast stop\n8\tc\tQ\texec\tomarchy-shell px-recast stopReplay\n";
+    assert.deepEqual(Binds.parseConfigBinds(tsv), { stop: "SUPER + ALT + S" });
+});
+
+test("isTaken ignores our own binds and submaps", () => {
+    const binds = [
+        { modmask: 72, key: "P", submap: "", description: PREFIX + "Pause / resume" },
+        { modmask: 72, key: "s", submap: "", description: "Something else" },
+        { modmask: 72, key: "X", submap: "resize", description: "Submap only" },
+    ];
+    assert.equal(Binds.isTaken(binds, "SUPER + ALT + P", PREFIX), false);
+    assert.equal(Binds.isTaken(binds, "SUPER + ALT + S", PREFIX), true);
+    assert.equal(Binds.isTaken(binds, "SUPER + ALT + X", PREFIX), false);
+    assert.deepEqual(Binds.ownedCombos(binds, PREFIX), ["SUPER + ALT + P"]);
+});
+
+test("autoCombo walks SUPER+ALT, SUPER+CTRL+ALT, then the next letters", () => {
+    assert.equal(Binds.autoCombo(action("stop"), takenBy(), {}), "SUPER + ALT + S");
+    assert.equal(Binds.autoCombo(action("stop"), takenBy("SUPER + ALT + S"), {}), "SUPER + CTRL + ALT + S");
+    assert.equal(Binds.autoCombo(action("stop"), takenBy("SUPER + ALT + S", "SUPER + CTRL + ALT + S"), {}), "SUPER + ALT + T");
+    assert.equal(Binds.autoCombo(action("stop"), takenBy("SUPER + ALT + S", "SUPER + CTRL + ALT + S"), { "SUPER + ALT + T": true }), "SUPER + ALT + U");
+});
+
+test("autoCombo wraps from Z to A and skips its own letter", () => {
+    const taken = c => c !== "SUPER + ALT + A" && c.startsWith("SUPER + ALT + ") || c.startsWith("SUPER + CTRL");
+    assert.equal(Binds.autoCombo({ letter: "X" }, taken, {}), "SUPER + ALT + A");
+});
+
+test("resolve: override beats config beats auto", () => {
+    const config = { bindPause: "super+shift+p", bindStop: "", bindCancel: "", bindSaveReplay: "" };
+    const configBinds = { pause: "CTRL + ALT + P", stop: "CTRL + ALT + S" };
+    assert.deepEqual(Binds.resolve(config, configBinds, takenBy()), {
+        pause: { combo: "SUPER + SHIFT + P", source: "override", conflict: false },
+        stop: { combo: "CTRL + ALT + S", source: "config", conflict: false },
+        cancel: { combo: "SUPER + ALT + X", source: "auto", conflict: false },
+        saveReplay: { combo: "SUPER + ALT + R", source: "auto", conflict: false },
+    });
+});
+
+test("resolve flags a taken override and keeps auto off its combo", () => {
+    const config = { bindPause: "", bindStop: "SUPER + ALT + X", bindCancel: "", bindSaveReplay: "" };
+    const r = Binds.resolve(config, {}, takenBy("SUPER + ALT + X"));
+    assert.deepEqual(r.stop, { combo: "SUPER + ALT + X", source: "override", conflict: true });
+    assert.deepEqual(r.cancel, { combo: "SUPER + CTRL + ALT + X", source: "auto", conflict: false });
+    assert.deepEqual(Binds.managed(r, "record").map(e => e.action.id + "=" + e.combo),
+        ["pause=SUPER + ALT + P", "cancel=SUPER + CTRL + ALT + X"]);
+});
+
+test("resolve: an override equal to the action's own bindings.lua bind is not a conflict", () => {
+    const config = { bindPause: "", bindStop: "", bindCancel: "CTRL + ALT + PRINT", bindSaveReplay: "" };
+    const r = Binds.resolve(config, { cancel: "CTRL + ALT + PRINT" }, takenBy("CTRL + ALT + PRINT"));
+    assert.deepEqual(r.cancel, { combo: "CTRL + ALT + PRINT", source: "override", conflict: false });
+});
+
+test("syncScript clears stale and target combos of our binds, then binds", () => {
+    const e = (id, combo) => ({ action: action(id), combo });
+    const script = Binds.syncScript([e("pause", "SUPER + ALT + P"), e("stop", "SUPER + ALT + S")],
+        [e("stop", "SUPER + ALT + S"), e("cancel", "SUPER + ALT + X")], PREFIX);
+    const guard = (m, k) => "hyprctl binds -j | jq -e --argjson m " + m + " --arg k " + k + " --arg p 'Better Recast: '"
+        + " '[.[] | select(.modmask == $m and (.key | ascii_upcase) == $k and .submap == \"\")] | all(.description | startswith($p))' >/dev/null"
+        + " && hyprctl eval 'hl.unbind(\"SUPER + ALT + " + k + "\")'";
+    assert.equal(script,
+        guard(72, "P") + "\n" + guard(72, "X") + "\n"
+        + "hyprctl eval 'hl.bind(\"SUPER + ALT + X\", hl.dsp.exec_cmd(\"omarchy-shell px-recast cancel\"), { description = \"Better Recast: Cancel (discard)\" })'");
+    assert.equal(Binds.syncScript([e("stop", "SUPER + ALT + S")], [e("stop", "SUPER + ALT + S")], PREFIX), "");
+});
+
 console.log("  passed: " + passed + "  failed: " + failed);
 process.exit(failed === 0 ? 0 : 1);

@@ -3,6 +3,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
+import "Binds.js" as Binds
 import "Config.js" as Config
 import "GpuProbe.js" as GpuProbe
 import "PostProcess.js" as PostProcess
@@ -88,6 +90,21 @@ Item {
     readonly property bool paused: state === "paused"
     readonly property bool replayActive: state === "replay"
     readonly property bool busy: state === "starting" || state === "stopping"
+    // Which capture-control actions apply right now ("" = none).
+    readonly property string captureKind: active ? (recordingIsStream ? "stream" : "record") : (state === "replay" ? "replay" : "")
+
+    // ── Capture-control keybinds ──
+    // bindings.lua binds that already call px-recast, by action id.
+    property var _configBinds: ({})
+    // `hyprctl binds -j` as of the last refresh.
+    property var _hyprBinds: []
+    property bool _bindsLoaded: false
+    property bool _bindsRefreshPending: false
+    // [{ action, combo }] this service has bound in Hyprland.
+    property var _boundBinds: []
+    readonly property var resolvedBinds: Binds.resolve(config, _configBinds, function (combo) {
+        return Binds.isTaken(root._hyprBinds, combo, Binds.DESCRIPTION_PREFIX);
+    })
 
     // ── Paths ──
     readonly property string runtimeDir: {
@@ -99,10 +116,12 @@ Item {
     readonly property string ipcSocketPath: runtimeDir + "/ipc.sock"
     readonly property string stateFilePath: runtimeDir + "/state.txt"
     readonly property string recordingStateFilePath: "/tmp/omarchy-screenrecord-filename"
-    readonly property string ipcScriptPath: {
-        // Resolve relative to this plugin's source directory.
-        var url = Qt.resolvedUrl("scripts/gsr-ipc.py");
-        var s = String(url);
+    readonly property string ipcScriptPath: pluginPath("scripts/gsr-ipc.py")
+    readonly property string readBindsScriptPath: pluginPath("scripts/read-binds.lua")
+
+    // Absolute path of a file shipped with this plugin.
+    function pluginPath(relative) {
+        var s = String(Qt.resolvedUrl(relative));
         if (s.indexOf("file://") === 0)
             s = s.substring(7);
         try {
@@ -136,6 +155,7 @@ Item {
         refreshAudioDevices();
         refreshWebcamDevices();
         refreshConfig();
+        refreshBinds();
         Qt.callLater(function() { flushState() });
     }
 
@@ -342,6 +362,44 @@ Item {
         // compatibility marker for stock pyxis indicators
         writeMarker.command = ["bash", "-c", "mkdir -p " + runtimeDir + " && printf '%s\n' '" + recordingFile + "' > " + recordingStateFilePath + " && printf '%s\n' '" + String(lastTarget) + "' > " + stateFilePath];
         writeMarker.running = true;
+    }
+
+    function refreshBinds() {
+        if (bindsProc.running)
+            _bindsRefreshPending = true;
+        else
+            bindsProc.running = true;
+    }
+
+    function applyBindsSnapshot(text) {
+        var sep = text.indexOf("\x1e");
+        var tsv = sep === -1 ? "" : text.substring(0, sep);
+        var binds = [];
+        try {
+            binds = JSON.parse(sep === -1 ? text : text.substring(sep + 1));
+        } catch (e) {}
+        _configBinds = Binds.parseConfigBinds(tsv);
+        _hyprBinds = Array.isArray(binds) ? binds : [];
+        if (!_bindsLoaded) {
+            _bindsLoaded = true;
+            // Leftovers from a shell that went away mid-capture.
+            var stale = Binds.ownedCombos(_hyprBinds, Binds.DESCRIPTION_PREFIX);
+            if (stale.length > 0 && captureKind === "")
+                Quickshell.execDetached(["bash", "-c", Binds.unbindScript(stale, Binds.DESCRIPTION_PREFIX)]);
+        }
+        syncBinds();
+    }
+
+    // Bind the plugin-managed combos for the current capture, unbind the
+    // rest. Safe to call any time; it only sends the difference.
+    function syncBinds() {
+        if (!_bindsLoaded)
+            return;
+        var wanted = captureKind === "" ? [] : Binds.managed(resolvedBinds, captureKind);
+        var script = Binds.syncScript(_boundBinds, wanted, Binds.DESCRIPTION_PREFIX);
+        _boundBinds = wanted;
+        if (script !== "")
+            Quickshell.execDetached(["bash", "-c", script]);
     }
 
     function pickRegion() {
@@ -849,6 +907,33 @@ Item {
     }
 
     Process {
+        id: bindsProc
+        command: ["bash", "-c", "lua \"$1\" 2>/dev/null; printf '\\036'; hyprctl binds -j", "_", root.readBindsScriptPath]
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: root.applyBindsSnapshot(text)
+        }
+        onExited: {
+            if (root._bindsRefreshPending) {
+                root._bindsRefreshPending = false;
+                bindsProc.running = true;
+            }
+        }
+    }
+
+    // Hyprland drops runtime binds when it reloads its config, and the
+    // reload may have added or removed binds of its own.
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (event && event.name === "configreloaded") {
+                root._boundBinds = [];
+                root.refreshBinds();
+            }
+        }
+    }
+
+    Process {
         id: prepareDir
     }
     Process {
@@ -982,7 +1067,9 @@ Item {
             barStatePath: root.barStatePath,
             recordingStateFilePath: root.recordingStateFilePath,
             ipcSocketPath: root.ipcSocketPath,
-            ipcScriptPath: root.ipcScriptPath
+            ipcScriptPath: root.ipcScriptPath,
+            captureKind: root.captureKind,
+            resolvedBinds: root.resolvedBinds
         });
     }
 
@@ -1014,7 +1101,14 @@ Item {
     onGpuDetectedChanged: { flushState() }
     onGpuInfoChanged: { flushState() }
     onMonitorsChanged: { flushState() }
-    onConfigChanged: { flushState() }
+    onConfigChanged: {
+        flushState();
+        syncBinds();
+    }
+    onCaptureKindChanged: {
+        flushState();
+        syncBinds();
+    }
     onConfigLoadedChanged: { flushState() }
     onRecordingIsStreamChanged: { flushState() }
     onRecordingFileChanged: { flushState() }

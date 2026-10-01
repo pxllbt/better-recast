@@ -454,6 +454,11 @@ Panel {
             root.service.refreshGpuInfo();
     }
 
+    onOpenedChanged: {
+        if (root.service)
+            root.service.panelOpen = root.opened;
+    }
+
     function requestClose() {
         root.close();
     }

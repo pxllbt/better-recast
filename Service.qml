@@ -69,6 +69,10 @@ Item {
     property double recordingBaseMs: 0
     property string lastTarget: ""      // for panel display / notification
     property string pendingRegion: ""   // set by pickRegion before start
+    // resolveTarget() result for the running capture, null when idle.
+    property var activeTarget: null
+    // Set by Panel.qml while the settings panel is open (overlay preview).
+    property bool panelOpen: false
     property string errorMessage: ""
 
     // Driving the starting→replay promotion in gsr.onRunningChanged, and
@@ -100,6 +104,8 @@ Item {
     property var _hyprBinds: []
     property bool _bindsLoaded: false
     property bool _bindsRefreshPending: false
+    // Override keys as last seen; a change re-reads what Hyprland has bound.
+    property string _bindOverrides: ""
     // [{ action, combo }] this service has bound in Hyprland.
     property var _boundBinds: []
     readonly property var resolvedBinds: Binds.resolve(config, _configBinds, function (combo) {
@@ -224,6 +230,7 @@ Item {
         recordingFile = "";
         _startingReplay = true;
         lastTarget = describeTarget(target) + " · replay buffer (" + String(config.replaySeconds || 60) + "s)";
+        activeTarget = target;
         state = "starting";
         recordingElapsed = 0;
         gsr.command = ["gpu-screen-recorder"].concat(args, ["-o", outputDir, "-ipc", ipcSocketPath]);
@@ -330,6 +337,7 @@ Item {
             }
             recordingFile = "";
             lastTarget = describeTarget(target) + " · " + config.streamPlatform;
+            activeTarget = target;
             state = "starting";
             recordingElapsed = 0;
             gsr.command = ["gpu-screen-recorder"].concat(args);
@@ -353,6 +361,7 @@ Item {
         prepareDir.running = true;
 
         lastTarget = describeTarget(target);
+        activeTarget = target;
         state = "starting";
         recordingElapsed = 0;
         gsr.command = args;
@@ -463,13 +472,18 @@ Item {
     }
 
     function setConfig(key, value) {
-        var copy = Object.assign({}, config);
-        copy[key] = value;
-        config = Config.normalize(copy);
+        var changes = {};
+        changes[key] = value;
+        setConfigs(changes);
+    }
+
+    // Several keys, one write to shell.json.
+    function setConfigs(changes) {
+        config = Config.normalize(Object.assign({}, config, changes));
         persistConfig();
-        if (key === "mode" && config.mode !== "replay" && state === "replay")
+        if ("mode" in changes && config.mode !== "replay" && state === "replay")
             state = "idle";
-        if (key === "webcamEnabled" || key === "webcamDevice" || key === "webcamSize")
+        if ("webcamEnabled" in changes || "webcamDevice" in changes || "webcamSize" in changes)
             refreshWebcamDevices();
     }
 
@@ -652,6 +666,7 @@ Item {
         recordingIsStream = false;
         _wasReplay = false;
         _cancelRequested = false;
+        activeTarget = null;
         state = "idle";
         clearMarkerProc.command = ["bash", "-c", "rm -f " + recordingStateFilePath + " " + stateFilePath];
         clearMarkerProc.running = true;
@@ -681,6 +696,7 @@ Item {
         recordingIsStream = false;
         _wasReplay = false;
         _cancelRequested = false;
+        activeTarget = null;
         state = "idle";
         clearMarkerProc.command = ["bash", "-c", "rm -f " + recordingStateFilePath + " " + stateFilePath];
         clearMarkerProc.running = true;
@@ -824,8 +840,9 @@ Item {
             } else if (root.state === "starting" || root.state === "recording" || root.state === "paused" || root.state === "replay") {
                 root.onRecordingFailed("gpu-screen-recorder exited unexpectedly (code " + exitCode + ")");
             } else {
+                root.activeTarget = null;
                 root.state = "idle";
-                restoreVolume();
+                root.restoreVolume();
             }
         }
     }
@@ -1069,6 +1086,7 @@ Item {
             ipcSocketPath: root.ipcSocketPath,
             ipcScriptPath: root.ipcScriptPath,
             captureKind: root.captureKind,
+            activeTarget: root.activeTarget,
             resolvedBinds: root.resolvedBinds
         });
     }
@@ -1103,6 +1121,11 @@ Item {
     onMonitorsChanged: { flushState() }
     onConfigChanged: {
         flushState();
+        var overrides = Binds.ACTIONS.map(function (a) { return config[a.configKey]; }).join("\n");
+        if (overrides !== _bindOverrides) {
+            _bindOverrides = overrides;
+            refreshBinds();
+        }
         syncBinds();
     }
     onCaptureKindChanged: {
@@ -1126,6 +1149,10 @@ Item {
                 root.recordingElapsed = root.recordingBaseSec + Math.floor((Date.now() - root.recordingBaseMs) / 1000);
             }
         }
+    }
+
+    ControlsOverlay {
+        service: root
     }
 
     // IPC target so bar widgets / keybinds can toggle recording even when

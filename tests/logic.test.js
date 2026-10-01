@@ -153,5 +153,52 @@ test("syncScript clears stale and target combos of our binds, then binds", () =>
     assert.equal(Binds.syncScript([e("stop", "SUPER + ALT + S")], [e("stop", "SUPER + ALT + S")], PREFIX), "");
 });
 
+const Placement = load("Placement.js");
+const DP10 = { name: "DP-10", x: 2560, y: 0, width: 2560, height: 1440 };
+const DP9 = { name: "DP-9", x: 5200, y: 0, width: 2560, height: 1440 };
+const TWO = [DP10, DP9];
+
+test("regionRect parses WxH+X+Y", () => {
+    assert.deepEqual(Placement.regionRect("800x600+5000+-20"), { x: 5000, y: -20, w: 800, h: 600 });
+    assert.equal(Placement.regionRect("junk"), null);
+});
+
+test("recordedScreens: monitor, spanning region (focused first), portal", () => {
+    assert.deepEqual(Placement.recordedScreens({ type: "monitor", name: "DP-9" }, TWO, "DP-10"), ["DP-9"]);
+    assert.deepEqual(Placement.recordedScreens({ type: "region", geometry: "800x600+4800+100" }, TWO, "DP-9"), ["DP-9", "DP-10"]);
+    assert.deepEqual(Placement.recordedScreens({ type: "region", geometry: "100x100+3000+100" }, TWO, "DP-9"), ["DP-10"]);
+    assert.deepEqual(Placement.recordedScreens({ type: "portal" }, TWO, "DP-10"), ["DP-10"]);
+});
+
+test("auto puts the overlay on the free screen, facing the recording", () => {
+    assert.deepEqual(Placement.choosePlacement("auto", ["DP-9"], TWO, "right"), { screen: "DP-10", edge: "right", kind: "pinned" });
+    assert.deepEqual(Placement.choosePlacement("auto", ["DP-10"], TWO, "right"), { screen: "DP-9", edge: "left", kind: "pinned" });
+});
+
+test("auto with no free screen peeks from the edge setting", () => {
+    assert.deepEqual(Placement.choosePlacement("auto", ["DP-10"], [DP10], "top"), { screen: "DP-10", edge: "top", kind: "peek" });
+    assert.deepEqual(Placement.choosePlacement("auto", ["DP-9", "DP-10"], TWO, "left"), { screen: "DP-9", edge: "left", kind: "peek" });
+});
+
+test("pin, timed, float and off", () => {
+    assert.deepEqual(Placement.choosePlacement("pin", ["DP-10"], [DP10], "bottom"), { screen: "DP-10", edge: "bottom", kind: "pinned" });
+    assert.deepEqual(Placement.choosePlacement("timed", ["DP-9"], TWO, "bottom"), { screen: "DP-10", edge: "right", kind: "peek" });
+    assert.deepEqual(Placement.choosePlacement("float", ["DP-9"], TWO, "bottom"), { screen: "DP-10", edge: "right", kind: "float" });
+    assert.equal(Placement.choosePlacement("off", ["DP-9"], TWO, "bottom"), null);
+});
+
+test("the free screen nearest the recording wins, stacked vertically too", () => {
+    const top = { name: "TOP", x: 0, y: -1080, width: 1920, height: 1080 };
+    const main = { name: "MAIN", x: 0, y: 0, width: 1920, height: 1080 };
+    const far = { name: "FAR", x: 5000, y: 0, width: 1920, height: 1080 };
+    assert.deepEqual(Placement.choosePlacement("auto", ["MAIN"], [far, top, main], "right"), { screen: "TOP", edge: "bottom", kind: "pinned" });
+});
+
+test("normalize clamps and validates overlay keys", () => {
+    const c = Config.normalize({ overlayMode: "sideways", overlayPrevMode: "float", overlaySeconds: 99, overlayEdge: "top", overlayFloatX: "abc", overlayFloatY: 120.6, overlayPinned: "true" });
+    assert.deepEqual([c.overlayMode, c.overlayPrevMode, c.overlaySeconds, c.overlayEdge, c.overlayFloatX, c.overlayFloatY, c.overlayPinned],
+        ["auto", "auto", 60, "top", -1, 121, true]);
+});
+
 console.log("  passed: " + passed + "  failed: " + failed);
 process.exit(failed === 0 ? 0 : 1);

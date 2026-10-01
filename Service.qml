@@ -73,6 +73,8 @@ Item {
     // saved recording.
     property bool _startingReplay: false
     property bool _wasReplay: false
+    // Set by cancel(): the finished file is deleted instead of announced.
+    property bool _cancelRequested: false
     property string _lastSavedPath: ""
     readonly property string lastSavedPath: _lastSavedPath
 
@@ -347,6 +349,10 @@ Item {
     }
 
     function stop() {
+        if (state === "replay") {
+            stopReplay();
+            return;
+        }
         if (!active && state !== "starting")
             return;
         state = "stopping";
@@ -380,6 +386,21 @@ Item {
             pause();
         else if (state === "paused")
             resume();
+    }
+
+    // Recording: stop and delete the file. Replay: close the buffer unsaved.
+    // Stream: just stop (there is nothing local to discard unless the backup
+    // copy is on, and that copy is the point of the option).
+    function cancel() {
+        if (state === "replay") {
+            stopReplay();
+            return;
+        }
+        if (!active && state !== "starting")
+            return;
+        if (!recordingIsStream)
+            _cancelRequested = true;
+        stop();
     }
 
     function setConfig(key, value) {
@@ -557,17 +578,27 @@ Item {
         return true;
     }
 
+    function discardRecording(path) {
+        if (path)
+            Quickshell.execDetached(["rm", "-f", "--", path]);
+        sendNotification("Recording discarded", "The recording was cancelled and deleted.", "normal", 5000);
+    }
+
     function onRecordingSaved() {
         var wasStream = recordingIsStream;
         var wasReplay = _wasReplay;
+        var cancelled = _cancelRequested;
         var saved = recordingFile;
         recordingFile = "";
         recordingIsStream = false;
         _wasReplay = false;
+        _cancelRequested = false;
         state = "idle";
         clearMarkerProc.command = ["bash", "-c", "rm -f " + recordingStateFilePath + " " + stateFilePath];
         clearMarkerProc.running = true;
-        if (wasReplay) {
+        if (cancelled) {
+            discardRecording(saved);
+        } else if (wasReplay) {
             sendNotification("Replay buffer stopped", "The rolling buffer was closed without saving.", "normal", 10000);
         } else if (wasStream) {
             sendNotification("Stream ended", "Your live stream has stopped.", "normal", 10000);
@@ -580,17 +611,22 @@ Item {
 
     function onRecordingFailed(msg) {
         _startingReplay = false;
-        errorMessage = msg;
         var wasStream = recordingIsStream;
         var wasReplay = _wasReplay;
+        var cancelled = _cancelRequested;
+        if (!cancelled)
+            errorMessage = msg;
         var saved = recordingFile;
         recordingFile = "";
         recordingIsStream = false;
         _wasReplay = false;
+        _cancelRequested = false;
         state = "idle";
         clearMarkerProc.command = ["bash", "-c", "rm -f " + recordingStateFilePath + " " + stateFilePath];
         clearMarkerProc.running = true;
-        if (wasReplay) {
+        if (cancelled) {
+            discardRecording(saved);
+        } else if (wasReplay) {
             sendNotification("Replay buffer crashed", msg, "critical", 8000);
         } else {
             sendNotification(wasStream ? "Stream ended unexpectedly" : "Screen recording failed", msg, "critical", 8000);
@@ -753,11 +789,21 @@ Item {
         id: openProc
     }
 
+    // gsr has no pause event of its own; the state follows the IPC reply.
+    // A stop issued while the reply was in flight wins.
     Process {
         id: ipcPause
+        onExited: function (exitCode) {
+            if (exitCode === 0 && root.state === "recording")
+                root.state = "paused";
+        }
     }
     Process {
         id: ipcResume
+        onExited: function (exitCode) {
+            if (exitCode === 0 && root.state === "paused")
+                root.state = "recording";
+        }
     }
 
     Process {
@@ -996,6 +1042,16 @@ Item {
 
         function resume(): string {
             root.resume();
+            return "ok";
+        }
+
+        function togglePause(): string {
+            root.togglePause();
+            return "ok";
+        }
+
+        function cancel(): string {
+            root.cancel();
             return "ok";
         }
 

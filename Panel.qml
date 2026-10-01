@@ -1401,6 +1401,33 @@ Panel {
                                 }
 
                                 Text {
+                                    text: "Set levels"
+                                    color: root.muted
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.caption
+                                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                                }
+                                ToggleSwitch {
+                                    checked: root.cfg.audioSetVolume === true
+                                    foreground: root.foreground
+                                    accent: root.accent
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                                    onToggled: root.setConfig("audioSetVolume", root.cfg.audioSetVolume !== true)
+                                }
+
+                                Text {
+                                    text: "Set the volume levels below while recording; off leaves system volume alone"
+                                    color: root.muted
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.caption
+                                    wrapMode: Text.WordWrap
+                                    opacity: 0.8
+                                    Layout.columnSpan: 2
+                                    Layout.fillWidth: true
+                                }
+
+                                Text {
                                     text: "Desktop volume"
                                     color: root.muted
                                     font.family: root.fontFamily
@@ -1414,6 +1441,8 @@ Panel {
                                     PanelSlider {
                                         id: desktopVolumeSlider
                                         Layout.fillWidth: true
+                                        enabled: root.cfg.audioSetVolume === true
+                                        opacity: enabled ? 1 : 0.4
                                         minimum: 0
                                         maximum: 100
                                         integer: true
@@ -1427,6 +1456,7 @@ Panel {
 
                                     Text {
                                         text: desktopVolumeSlider.liveValue.toFixed(0) + "%"
+                                        opacity: desktopVolumeSlider.opacity
                                         color: root.muted
                                         font.family: root.fontFamily
                                         font.pixelSize: Style.font.caption
@@ -1448,6 +1478,8 @@ Panel {
                                     PanelSlider {
                                         id: micVolumeSlider
                                         Layout.fillWidth: true
+                                        enabled: root.cfg.audioSetVolume === true
+                                        opacity: enabled ? 1 : 0.4
                                         minimum: 0
                                         maximum: 100
                                         integer: true
@@ -1461,6 +1493,7 @@ Panel {
 
                                     Text {
                                         text: micVolumeSlider.liveValue.toFixed(0) + "%"
+                                        opacity: micVolumeSlider.opacity
                                         color: root.muted
                                         font.family: root.fontFamily
                                         font.pixelSize: Style.font.caption

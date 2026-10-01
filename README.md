@@ -9,7 +9,7 @@ automatic hardware and encoder detection.
 ## Features
 
 - One-click record/stop from the bar widget (left click toggle, right click panel)
-- **Volume sliders** for desktop audio and microphone (applied via PipeWire/wpctl)
+- **Recording volume levels** (opt-in): set desktop audio and microphone levels while a recording runs, restored when it stops (via PipeWire/wpctl)
 - **Audio device selectors** for desktop and mic (fed by `gpu-screen-recorder --list-audio-devices`, drive gsr's `-a` capture sources directly)
 - **Audio codec (AAC/Opus) and bitrate** control (0–512 kbps, auto when 0)
 - **Noise gate** via FFmpeg's `afftdn`+`agate` filter

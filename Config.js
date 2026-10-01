@@ -29,6 +29,7 @@ function defaultConfig() {
     audioMicrophone: false,
     audioCodec: "aac",        // "aac" | "opus"
     audioBitrate: 0,          // 0 = auto
+    audioSetVolume: false,    // set the levels below only while recording
     audioVolume: 100,         // 0-100, desktop audio volume
     audioMicVolume: 100,      // 0-100, microphone volume
     audioDesktopDevice: "default_output",
@@ -289,7 +290,7 @@ function normalize(raw) {
     if (k === "audioDesktopDevice" || k === "audioMicDevice") {
       if (typeof v !== "string") v = d[k]
     }
-    if (k === "audioNoiseGate") {
+    if (k === "audioNoiseGate" || k === "audioSetVolume") {
       if (typeof v !== "boolean") v = d[k]
     }
     if (k === "audioCodec" && ["aac", "opus", "flac"].indexOf(v) === -1) v = d[k]

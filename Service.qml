@@ -76,11 +76,10 @@ Item {
     property string _lastSavedPath: ""
     readonly property string lastSavedPath: _lastSavedPath
 
-    // Saved volumes so we can restore the user's listening level
-    // when recording stops. applyVolume() saves via volReadProc before
-    // overriding; restoreVolume() restores them on stop/fail.
-    property var _savedAudioSinkVolume: 1.0
-    property var _savedAudioSourceVolume: 0.0
+    // Levels saved by applyVolume() before it overrides them, so
+    // restoreVolume() can put them back on stop/fail. null = not touched.
+    property var _savedAudioSinkVolume: null
+    property var _savedAudioSourceVolume: null
 
     readonly property bool active: state === "recording" || state === "paused"
     readonly property bool paused: state === "paused"
@@ -135,7 +134,6 @@ Item {
         refreshWebcamDevices();
         refreshConfig();
         Qt.callLater(function() { flushState() });
-        Qt.callLater(function() { applyVolume() });
     }
 
     // ── Public API (used by BarWidget / Panel) ──
@@ -178,7 +176,6 @@ Item {
         if (active || busy || state === "replay")
             return;
         errorMessage = "";
-        applyVolume();
 
         var target = resolveTarget("auto");
         if (!target) {
@@ -209,6 +206,7 @@ Item {
         gsr.command = ["gpu-screen-recorder"].concat(args, ["-o", outputDir, "-ipc", ipcSocketPath]);
         prepareDir.command = ["bash", "-c", "mkdir -p " + outputDir + " && mkdir -p " + runtimeDir];
         prepareDir.running = true;
+        applyVolume();
         gsr.running = true;
 
         // compatibility marker for stock pyxis indicators
@@ -268,7 +266,6 @@ Item {
         if (active || busy)
             return;
         errorMessage = "";
-        applyVolume();
 
         var streamMode = config.mode === "stream";
 
@@ -314,6 +311,7 @@ Item {
             recordingElapsed = 0;
             gsr.command = ["gpu-screen-recorder"].concat(args);
             gsr.environment = {"GSR_AUTH": streamKey};
+            applyVolume();
             gsr.running = true;
             // Ensure the IPC socket dir (and the output dir when a local copy is
             // requested) exists before the recorder starts.
@@ -335,6 +333,7 @@ Item {
         state = "starting";
         recordingElapsed = 0;
         gsr.command = args;
+        applyVolume();
         gsr.running = true;
 
         // compatibility marker for stock pyxis indicators
@@ -390,38 +389,53 @@ Item {
         persistConfig();
         if (key === "mode" && config.mode !== "replay" && state === "replay")
             state = "idle";
-        if (key === "audioVolume" || key === "audioMicVolume" || key === "audioDesktop" || key === "audioMicrophone")
-            applyVolume();
         if (key === "webcamEnabled" || key === "webcamDevice" || key === "webcamSize")
             refreshWebcamDevices();
     }
 
     // Update config in memory only — never persist. Used for session-scoped
     // stream credentials while `streamRemember` is off.
+    // Opt-in (audioSetVolume): set the recorded devices to the configured
+    // levels when a recording starts, and restore them when it ends. Only
+    // the devices actually being recorded are touched.
     function applyVolume() {
-        if (!config.audioEnabled) {
-            setWpctlVolume("DEFAULT_AUDIO_SINK", 0);
-            setWpctlVolume("DEFAULT_AUDIO_SOURCE", 0);
+        _savedAudioSinkVolume = null;
+        _savedAudioSourceVolume = null;
+        if (!config.audioSetVolume || !config.audioEnabled)
             return;
-        }
-        // Read both volumes first, then override. Reading must complete
-        // before setting so restoreVolume() has the correct old levels.
-        _savedAudioSinkVolume = 1.0;
-        _savedAudioSourceVolume = 0.0;
+        if (!config.audioDesktop && !config.audioMicrophone)
+            return;
+        // Read the current levels first so restoreVolume() can put them back.
+        // wpctl get-volume takes a single node, so read each one separately.
         volReadProc.command = ["bash", "-c",
-            "wpctl get-volume @DEFAULT_AUDIO_SINK@ @DEFAULT_AUDIO_SOURCE@ 2>/dev/null | awk '{print $2, $4}'"
+            "echo \"$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print $2}') "
+            + "$(wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | awk '{print $2}')\""
         ];
         volReadProc.running = true;
     }
 
-    function setWpctlVolume(node, volumePercent) {
-        wpctlProc.command = ["bash", "-c", "wpctl set-volume @" + node + "@ " + (volumePercent / 100).toFixed(2)];
+    function wpctlSetCommand(node, level) {
+        return "wpctl set-volume @" + node + "@ " + Number(level).toFixed(2);
+    }
+
+    // One process for all nodes: starting wpctlProc twice in a row drops the
+    // first command.
+    function runWpctl(cmds) {
+        if (cmds.length === 0)
+            return;
+        wpctlProc.command = ["bash", "-c", cmds.join("; ")];
         wpctlProc.running = true;
     }
 
     function restoreVolume() {
-        setWpctlVolume("DEFAULT_AUDIO_SINK", _savedAudioSinkVolume * 100);
-        setWpctlVolume("DEFAULT_AUDIO_SOURCE", _savedAudioSourceVolume * 100);
+        var cmds = [];
+        if (_savedAudioSinkVolume !== null)
+            cmds.push(wpctlSetCommand("DEFAULT_AUDIO_SINK", _savedAudioSinkVolume));
+        if (_savedAudioSourceVolume !== null)
+            cmds.push(wpctlSetCommand("DEFAULT_AUDIO_SOURCE", _savedAudioSourceVolume));
+        _savedAudioSinkVolume = null;
+        _savedAudioSourceVolume = null;
+        runWpctl(cmds);
     }
 
     function setSessionConfig(key, value) {
@@ -807,16 +821,16 @@ Item {
                 var parts = out.split(/\s+/)
                 var sink = parseFloat(parts[0])
                 var source = parseFloat(parts[1])
-                if (!isNaN(sink)) root._savedAudioSinkVolume = sink
-                if (!isNaN(source)) root._savedAudioSourceVolume = source
-                if (config.audioDesktop)
-                    setWpctlVolume("DEFAULT_AUDIO_SINK", config.audioVolume || 100)
-                else
-                    setWpctlVolume("DEFAULT_AUDIO_SINK", 0)
-                if (config.audioMicrophone)
-                    setWpctlVolume("DEFAULT_AUDIO_SOURCE", config.audioMicVolume || 100)
-                else
-                    setWpctlVolume("DEFAULT_AUDIO_SOURCE", 0)
+                var cmds = []
+                if (config.audioDesktop && !isNaN(sink)) {
+                    root._savedAudioSinkVolume = sink
+                    cmds.push(root.wpctlSetCommand("DEFAULT_AUDIO_SINK", config.audioVolume / 100))
+                }
+                if (config.audioMicrophone && !isNaN(source)) {
+                    root._savedAudioSourceVolume = source
+                    cmds.push(root.wpctlSetCommand("DEFAULT_AUDIO_SOURCE", config.audioMicVolume / 100))
+                }
+                root.runWpctl(cmds)
             }
         }
     }

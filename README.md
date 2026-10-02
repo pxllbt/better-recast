@@ -9,6 +9,7 @@ automatic hardware and encoder detection.
 ## Features
 
 - One-click record/stop from the bar widget (left click toggle, right click panel)
+- **Quick menu** (opt-in, "Left-click menu"): left click opens a small menu to choose record / stream / replay and the target (window, monitor or region, with "Pick now"), then start or stop
 - **Controls overlay** while a capture runs: status, elapsed time, and clickable pause / stop / cancel / save-replay rows showing each keybind. Modes:
   - **Auto** (default): pinned on a monitor you are not recording, against the side facing the recording. With no free monitor it shows for a few seconds, then tucks into a hover strip on the chosen edge
   - **Pinned**, **Show for N seconds**, **Floating** (drag it anywhere; the pop-out button on the overlay toggles this), **Off**
@@ -29,7 +30,9 @@ automatic hardware and encoder detection.
   - AMD / Intel — AV1 → HEVC → H.264, VBR, very-high/high, performance tune
   - CPU fallback — H.264, QP, medium
 - Hardware probing via `gpu-screen-recorder --info` (primary) with DRM/nvidia-smi fallbacks
-- Region picking (`omarchy-capture-region`), monitor selection, or window/portal capture
+- Region, monitor, or window/portal capture
+- **Built-in region picker**: dims the screens and outlines the window under the pointer. Drag to draw a region, click to take that window (or the whole monitor), or press and release the right button on a window to take it with a confirm flash. Escape cancels. `omarchy-shell px-recast pickRegion` opens it from a keybind. A pick covering a whole monitor records that monitor. Picking from a start begins the capture right after the pick, once the picker is off screen
+- **Pick a new region each time** (opt-in): every start opens the picker instead of reusing the last region
 - Pause / resume over the GSR unix-socket IPC (`scripts/gsr-ipc.py`), with the elapsed timer held while paused
 - Runtime settings persisted inline to `~/.config/omarchy/shell.json` (entry `pix.recast`)
 - Compatible with stock indicators via `/tmp/omarchy-screenrecord-filename`
@@ -39,7 +42,7 @@ automatic hardware and encoder detection.
 
 - Omarchy 4.x (Quickshell 0.3+)
 - `gpu-screen-recorder` (≥ 6.0) with a matching GPU driver
-- `omarchy-capture-region`, `omarchy-notification-send` (bundled with Omarchy)
+- `omarchy-notification-send` (bundled with Omarchy); `omarchy-capture-region` only as a fallback if the built-in picker fails to load
 - `python3` for the IPC client
 
 ## Install

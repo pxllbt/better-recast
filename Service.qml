@@ -7,6 +7,7 @@ import Quickshell.Hyprland
 import "Binds.js" as Binds
 import "Config.js" as Config
 import "GpuProbe.js" as GpuProbe
+import "Picker.js" as Picker
 import "PostProcess.js" as PostProcess
 
 // pix.recast service — owns gpu-screen-recorder lifecycle, GPU detection, config
@@ -68,7 +69,11 @@ Item {
     property int recordingBaseSec: 0
     property double recordingBaseMs: 0
     property string lastTarget: ""      // for panel display / notification
-    property string pendingRegion: ""   // set by pickRegion before start
+    // Region spec ("WxH+X+Y" or "monitor:NAME") picked for the next start.
+    property string pendingRegion: ""
+    // Run once the region picker returns a pick (a start waiting on it).
+    property var _afterPick: null
+    readonly property bool picking: pickerLoader.item ? pickerLoader.item.busy : regionPicker.running
     // resolveTarget() result for the running capture, null when idle.
     property var activeTarget: null
     // Set by Panel.qml while the settings panel is open (overlay preview).
@@ -201,16 +206,19 @@ Item {
     }
 
     function startReplay() {
-        if (active || busy || state === "replay")
+        if (active || busy || picking || state === "replay")
             return;
         errorMessage = "";
 
+        if (needsPick("auto")) {
+            pickRegion(function () {
+                root.startReplay();
+            });
+            return;
+        }
         var target = resolveTarget("auto");
+        pendingRegion = "";
         if (!target) {
-            if (config.targetMode === "region") {
-                pickRegion();
-                return;
-            }
             errorMessage = "No capture target available";
             state = "error";
             return;
@@ -292,18 +300,21 @@ Item {
     }
 
     function start(targetType) {
-        if (active || busy)
+        if (active || busy || picking)
             return;
         errorMessage = "";
 
         var streamMode = config.mode === "stream";
 
+        if (needsPick(targetType)) {
+            pickRegion(function () {
+                root.start(targetType);
+            });
+            return;
+        }
         var target = resolveTarget(targetType);
+        pendingRegion = "";
         if (!target) {
-            if (config.targetMode === "region" || targetType === "region") {
-                pickRegion();
-                return;
-            }
             errorMessage = "No capture target available";
             state = "error";
             return;
@@ -410,9 +421,29 @@ Item {
             Quickshell.execDetached(["bash", "-c", script]);
     }
 
-    function pickRegion() {
-        regionPicker.command = ["omarchy-capture-region", "smart", "--match-monitor"];
-        regionPicker.running = true;
+    // `then` runs after a successful pick; without it the pick is just
+    // kept for the next start.
+    function pickRegion(then) {
+        if (picking)
+            return;
+        _afterPick = typeof then === "function" ? then : null;
+        if (pickerLoader.item)
+            pickerLoader.item.pick();
+        else
+            regionPicker.running = true;
+    }
+
+    function regionPicked(spec) {
+        var then = _afterPick;
+        _afterPick = null;
+        if (!spec) {
+            errorMessage = "Region selection was cancelled";
+            return;
+        }
+        pendingRegion = spec;
+        setSessionConfig("_lastRegion", spec);
+        if (then)
+            then();
     }
 
     function stop() {
@@ -568,17 +599,20 @@ Item {
 
     // ── Internals ──
 
+    function targetModeFor(targetType) {
+        return targetType && targetType !== "auto" ? targetType : config.targetMode;
+    }
+
+    function needsPick(targetType) {
+        return targetModeFor(targetType) === "region" && pendingRegion === ""
+            && !Picker.targetFromSpec(config.region || config._lastRegion);
+    }
+
+    // A region pick that covers a whole monitor records that monitor.
     function resolveTarget(targetType) {
-        var mode = targetType && targetType !== "auto" ? targetType : config.targetMode;
-        if (mode === "region") {
-            var geom = pendingRegion || config.region || config._lastRegion || "";
-            if (!geom)
-                return null;
-            return {
-                type: "region",
-                geometry: geom
-            };
-        }
+        var mode = targetModeFor(targetType);
+        if (mode === "region")
+            return Picker.targetFromSpec(pendingRegion || config.region || config._lastRegion);
         if (mode === "monitor") {
             var name = config.monitorName || config._lastMonitor || "";
             if (!name && monitors.length > 0)
@@ -890,35 +924,28 @@ Item {
         }
     }
 
+    Loader {
+        id: pickerLoader
+        source: "RegionPicker.qml"
+    }
+
+    Connections {
+        target: pickerLoader.item
+        function onPicked(spec) {
+            root.regionPicked(spec);
+        }
+        function onCancelled() {
+            root.regionPicked("");
+        }
+    }
+
+    // Only used when RegionPicker.qml fails to load.
     Process {
         id: regionPicker
+        command: ["omarchy-capture-region", "smart", "--match-monitor"]
         stdout: StdioCollector {
             waitForEnd: true
-            onStreamFinished: {
-                var out = text.trim();
-                if (!out || out === "cancelled" || out === "null") {
-                    root.pendingRegion = "";
-                    return;
-                }
-                // Expected output: "WIDTHxHEIGHT+X+Y" (omarchy-capture-region fmt)
-                if (out.match(/^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/)) {
-                    root.pendingRegion = out;
-                    root.setConfig("_lastRegion", out);
-                } else {
-                    // slurry format "X,Y WxH"
-                    var m = out.match(/^(-?[0-9]+),(-?[0-9]+)\s+([0-9]+)x([0-9]+)$/);
-                    if (m) {
-                        var geom = m[3] + "x" + m[4] + "+" + m[1] + "+" + m[2];
-                        root.pendingRegion = geom;
-                        root.setConfig("_lastRegion", geom);
-                    }
-                }
-            }
-        }
-        onExited: function (exitCode) {
-            if (exitCode !== 0 && root.pendingRegion === "") {
-                root.errorMessage = "Region selection was cancelled";
-            }
+            onStreamFinished: root.regionPicked(Picker.specFromCaptureRegion(text))
         }
     }
 
@@ -1216,6 +1243,11 @@ Item {
 
         function stopReplay(): string {
             root.stopReplay();
+            return "ok";
+        }
+
+        function pickRegion(): string {
+            root.pickRegion();
             return "ok";
         }
 

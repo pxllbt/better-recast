@@ -50,9 +50,6 @@ Panel {
         if (allConfirmed)
             root._pendingConfig = ({});
     }
-    // Error message: pulled from the live service, the state file, or set
-    // locally for fallback-path errors (e.g. region picker cancelled).
-    property string _localError: ""
     // Rolling in-panel error log (most recent last, capped at 6).
     property var _errorLog: []
     function _pushError(msg) {
@@ -62,11 +59,10 @@ Panel {
         next.push(msg);
         root._errorLog = next;
     }
+    // Error message: pulled from the live service or the state file.
     readonly property string errorMessage: root.service
         ? (root.service.errorMessage || "")
-        : (root.serviceState
-            ? (root.serviceState.errorMessage || root._localError || "")
-            : root._localError)
+        : (root.serviceState ? (root.serviceState.errorMessage || "") : "")
     property var anchorItem: null
     property var hostWidget: null
     property string omarchyPath: ""
@@ -479,6 +475,15 @@ Panel {
         }
     }
 
+    function pickRegion() {
+        if (root.service && typeof root.service.pickRegion === "function") {
+            root.service.pickRegion();
+        } else {
+            ipcActionProc.command = ["omarchy-shell", "px-recast", "pickRegion"];
+            ipcActionProc.running = true;
+        }
+    }
+
     function saveReplay() {
         if (!root.isReplay)
             return;
@@ -846,14 +851,7 @@ Panel {
 
                             Button {
                                 text: root.cfg._lastRegion ? "Re-pick region" : "Pick region"
-                                onClicked: {
-                                    if (root.service && typeof root.service.pickRegion === "function")
-                                        root.service.pickRegion();
-                                    else {
-                                        fallbackRegionPicker.command = ["omarchy-capture-region", "smart", "--match-monitor"];
-                                        fallbackRegionPicker.running = true;
-                                    }
-                                }
+                                onClicked: root.pickRegion()
                             }
 
                             Text {
@@ -2567,37 +2565,6 @@ Panel {
     Process {
         id: configIpcProc
         running: false
-    }
-
-    // Fallback region picker — used when service object is null
-    Process {
-        id: fallbackRegionPicker
-        stdout: StdioCollector {
-            waitForEnd: true
-            onStreamFinished: {
-                var out = text.trim();
-                if (!out || out === "cancelled" || out === "null") {
-                    root._localError = "Region selection was cancelled";
-                    root._pushError("Region selection was cancelled");
-                    return;
-                }
-                if (out.match(/^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/)) {
-                    root.setConfig("_lastRegion", out);
-                } else {
-                    var m = out.match(/^(-?[0-9]+),(-?[0-9]+)\s+([0-9]+)x([0-9]+)$/);
-                    if (m) {
-                        var geom = m[3] + "x" + m[4] + "+" + m[1] + "+" + m[2];
-                        root.setConfig("_lastRegion", geom);
-                    }
-                }
-            }
-        }
-        onExited: function (exitCode) {
-            if (exitCode !== 0) {
-                root._localError = "Region selection failed";
-                root._pushError("Region selection failed");
-            }
-        }
     }
 
     // Browse button folder picker — used for the output-dir field.

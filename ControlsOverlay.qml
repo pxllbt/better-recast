@@ -9,6 +9,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "Binds.js" as Binds
+import "Picker.js" as Picker
 import "Placement.js" as Placement
 
 // Capture controls: status, elapsed time and one row per action with its
@@ -59,11 +60,9 @@ Scope {
                 type: "monitor",
                 name: cfg.monitorName || cfg._lastMonitor || ""
             };
-        if (cfg.targetMode === "region" && (cfg.region || cfg._lastRegion))
-            return {
-                type: "region",
-                geometry: cfg.region || cfg._lastRegion
-            };
+        var picked = cfg.targetMode === "region" ? Picker.targetFromSpec(cfg.region || cfg._lastRegion) : null;
+        if (picked)
+            return picked;
         return {
             type: "portal"
         };

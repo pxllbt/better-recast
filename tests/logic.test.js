@@ -206,5 +206,91 @@ test("normalize clamps and validates overlay keys", () => {
         ["auto", "auto", 60, "top", true]);
 });
 
+const Picker = load("Picker.js");
+
+const HYPR_MONITORS = [
+    { name: "DP-10", x: 2560, y: 0, width: 2560, height: 1440, scale: 1, transform: 0, activeWorkspace: { id: 1 }, specialWorkspace: { id: 0 } },
+    { name: "eDP-1", x: 0, y: 0, width: 2880, height: 1800, scale: 1.5, transform: 0, activeWorkspace: { id: 2 }, specialWorkspace: { id: -98 } },
+    { name: "DP-9", x: 5120, y: 0, width: 2560, height: 1440, scale: 1, transform: 1, activeWorkspace: { id: 3 }, specialWorkspace: { id: 0 } },
+];
+function client(ws, at, size, extra) {
+    return Object.assign({ address: "0x" + at.join("") + size.join(""), workspace: { id: ws }, at, size, floating: false, hidden: false, mapped: true, fullscreen: 0 }, extra);
+}
+const PICK_MONITORS = Picker.monitorRects(HYPR_MONITORS);
+
+test("monitorRects divides by scale and swaps rotated sides", () => {
+    assert.deepEqual(PICK_MONITORS.map(m => Picker.formatGeometry(m)), ["2560x1440+2560+0", "1920x1200+0+0", "1440x2560+5120+0"]);
+});
+
+test("windowRects keeps active and special workspaces, drops hidden ones and other workspaces", () => {
+    const clients = [
+        client(1, [2570, 40], [1000, 700]),
+        client(5, [2570, 40], [400, 300]),
+        client(1, [2570, 800], [400, 300], { hidden: true }),
+        client(-98, [100, 100], [800, 600], { floating: true }),
+    ];
+    assert.deepEqual(Picker.windowRects(clients, HYPR_MONITORS), [
+        { x: 2570, y: 40, w: 1000, h: 700, layer: 0 },
+        { x: 100, y: 100, w: 800, h: 600, layer: 3 },
+    ]);
+});
+
+test("a fullscreen window hides the tiled windows of its workspace, not the floating ones", () => {
+    const clients = [
+        client(1, [2560, 0], [2560, 1440], { fullscreen: 2 }),
+        client(1, [2570, 40], [1000, 700]),
+        client(1, [3000, 300], [500, 400], { floating: true }),
+    ];
+    assert.deepEqual(Picker.windowRects(clients, HYPR_MONITORS).map(r => Picker.formatGeometry(r)), ["2560x1440+2560+0", "500x400+3000+300"]);
+});
+
+test("windowAt: floating over tiled, smallest within a layer, null outside", () => {
+    const tiled = { x: 0, y: 0, w: 500, h: 500, layer: 0 };
+    const smallTiled = { x: 100, y: 100, w: 100, h: 100, layer: 0 };
+    const floating = { x: 50, y: 50, w: 300, h: 300, layer: 1 };
+    assert.equal(Picker.windowAt([tiled, floating], 60, 60), floating);
+    assert.equal(Picker.windowAt([floating, smallTiled, tiled], 150, 150), floating);
+    assert.equal(Picker.windowAt([tiled, smallTiled], 150, 150), smallTiled);
+    assert.equal(Picker.windowAt([tiled, floating], 600, 600), null);
+    assert.equal(Picker.windowAt([tiled], 500, 10), null);
+});
+
+test("dragRect normalizes a drag in any direction", () => {
+    assert.equal(Picker.formatGeometry(Picker.dragRect(100, 200, 40, 50)), "60x150+40+50");
+    assert.equal(Picker.formatGeometry(Picker.dragRect(2600.4, 10, 2700.6, 20.2)), "101x10+2600+10");
+});
+
+test("a drag under 20px^2 counts as a click", () => {
+    assert.equal(Picker.isClick(Picker.dragRect(10, 10, 13, 16)), true);
+    assert.equal(Picker.isClick(Picker.dragRect(10, 10, 14, 15)), false);
+});
+
+test("monitorAt and specForRect map a whole-monitor rect to the monitor", () => {
+    assert.equal(Picker.monitorAt(PICK_MONITORS, 5119, 10).name, "DP-10");
+    assert.equal(Picker.monitorAt(PICK_MONITORS, 100, 1300), null);
+    assert.equal(Picker.specForRect({ x: 0, y: 0, w: 1920, h: 1200 }, PICK_MONITORS), "monitor:eDP-1");
+    assert.equal(Picker.specForRect({ x: 0, y: 0, w: 1920, h: 1199 }, PICK_MONITORS), "1920x1199+0+0");
+});
+
+test("clickSpec picks the window under the click, else the monitor", () => {
+    const wins = [{ x: 2570, y: 40, w: 1000, h: 700, layer: 0 }];
+    assert.equal(Picker.clickSpec(wins, PICK_MONITORS, 2600, 100), "1000x700+2570+40");
+    assert.equal(Picker.clickSpec(wins, PICK_MONITORS, 4000, 1000), "monitor:DP-10");
+    assert.equal(Picker.clickSpec(wins, PICK_MONITORS, -50, -50), "");
+});
+
+test("specFromCaptureRegion reads omarchy-capture-region output", () => {
+    assert.equal(Picker.specFromCaptureRegion("40,-50 60x150\n"), "60x150+40+-50");
+    assert.equal(Picker.specFromCaptureRegion("monitor:DP-9"), "monitor:DP-9");
+    assert.equal(Picker.specFromCaptureRegion(""), "");
+});
+
+test("targetFromSpec turns a spec into a capture target", () => {
+    assert.deepEqual(Picker.targetFromSpec("60x150+40+50"), { type: "region", geometry: "60x150+40+50" });
+    assert.deepEqual(Picker.targetFromSpec("monitor:DP-9"), { type: "monitor", name: "DP-9" });
+    assert.equal(Picker.targetFromSpec(""), null);
+    assert.equal(Picker.targetFromSpec("monitor:"), null);
+});
+
 console.log("  passed: " + passed + "  failed: " + failed);
 process.exit(failed === 0 ? 0 : 1);

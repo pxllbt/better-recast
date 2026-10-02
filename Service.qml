@@ -3,8 +3,12 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
+import "Binds.js" as Binds
 import "Config.js" as Config
 import "GpuProbe.js" as GpuProbe
+import "Picker.js" as Picker
+import "PostProcess.js" as PostProcess
 
 // pix.recast service — owns gpu-screen-recorder lifecycle, GPU detection, config
 // persistence and the IPC socket used for pause/resume/stop.
@@ -65,7 +69,15 @@ Item {
     property int recordingBaseSec: 0
     property double recordingBaseMs: 0
     property string lastTarget: ""      // for panel display / notification
-    property string pendingRegion: ""   // set by pickRegion before start
+    // Region spec ("WxH+X+Y" or "monitor:NAME") picked for the next start.
+    property string pendingRegion: ""
+    // Run once the region picker returns a pick (a start waiting on it).
+    property var _afterPick: null
+    readonly property bool picking: pickerLoader.item ? pickerLoader.item.busy : regionPicker.running
+    // resolveTarget() result for the running capture, null when idle.
+    property var activeTarget: null
+    // Set by Panel.qml while the settings panel is open (overlay preview).
+    property bool panelOpen: false
     property string errorMessage: ""
 
     // Driving the starting→replay promotion in gsr.onRunningChanged, and
@@ -73,19 +85,37 @@ Item {
     // saved recording.
     property bool _startingReplay: false
     property bool _wasReplay: false
+    // Set by cancel(): the finished file is deleted instead of announced.
+    property bool _cancelRequested: false
     property string _lastSavedPath: ""
     readonly property string lastSavedPath: _lastSavedPath
 
-    // Saved volumes so we can restore the user's listening level
-    // when recording stops. applyVolume() saves via volReadProc before
-    // overriding; restoreVolume() restores them on stop/fail.
-    property var _savedAudioSinkVolume: 1.0
-    property var _savedAudioSourceVolume: 0.0
+    // Levels saved by applyVolume() before it overrides them, so
+    // restoreVolume() can put them back on stop/fail. null = not touched.
+    property var _savedAudioSinkVolume: null
+    property var _savedAudioSourceVolume: null
 
     readonly property bool active: state === "recording" || state === "paused"
     readonly property bool paused: state === "paused"
     readonly property bool replayActive: state === "replay"
     readonly property bool busy: state === "starting" || state === "stopping"
+    // Which capture-control actions apply right now ("" = none).
+    readonly property string captureKind: active ? (recordingIsStream ? "stream" : "record") : (state === "replay" ? "replay" : "")
+
+    // ── Capture-control keybinds ──
+    // bindings.lua binds that already call px-recast, by action id.
+    property var _configBinds: ({})
+    // `hyprctl binds -j` as of the last refresh.
+    property var _hyprBinds: []
+    property bool _bindsLoaded: false
+    property bool _bindsRefreshPending: false
+    // Override keys as last seen; a change re-reads what Hyprland has bound.
+    property string _bindOverrides: ""
+    // [{ action, combo }] this service has bound in Hyprland.
+    property var _boundBinds: []
+    readonly property var resolvedBinds: Binds.resolve(config, _configBinds, function (combo) {
+        return Binds.isTaken(root._hyprBinds, combo, Binds.DESCRIPTION_PREFIX);
+    })
 
     // ── Paths ──
     readonly property string runtimeDir: {
@@ -97,10 +127,11 @@ Item {
     readonly property string ipcSocketPath: runtimeDir + "/ipc.sock"
     readonly property string stateFilePath: runtimeDir + "/state.txt"
     readonly property string recordingStateFilePath: "/tmp/omarchy-screenrecord-filename"
-    readonly property string ipcScriptPath: {
-        // Resolve relative to this plugin's source directory.
-        var url = Qt.resolvedUrl("scripts/gsr-ipc.py");
-        var s = String(url);
+    readonly property string ipcScriptPath: pluginPath("scripts/gsr-ipc.py")
+    readonly property string readBindsScriptPath: pluginPath("scripts/read-binds.lua")
+
+    function pluginPath(relative) {
+        var s = String(Qt.resolvedUrl(relative));
         if (s.indexOf("file://") === 0)
             s = s.substring(7);
         try {
@@ -134,8 +165,8 @@ Item {
         refreshAudioDevices();
         refreshWebcamDevices();
         refreshConfig();
+        refreshBinds();
         Qt.callLater(function() { flushState() });
-        Qt.callLater(function() { applyVolume() });
     }
 
     // ── Public API (used by BarWidget / Panel) ──
@@ -175,17 +206,19 @@ Item {
     }
 
     function startReplay() {
-        if (active || busy || state === "replay")
+        if (active || busy || picking || state === "replay")
             return;
         errorMessage = "";
-        applyVolume();
 
+        if (needsPick("auto")) {
+            pickRegion(function () {
+                root.startReplay();
+            });
+            return;
+        }
         var target = resolveTarget("auto");
+        pendingRegion = "";
         if (!target) {
-            if (config.targetMode === "region") {
-                pickRegion();
-                return;
-            }
             errorMessage = "No capture target available";
             state = "error";
             return;
@@ -204,11 +237,13 @@ Item {
         recordingFile = "";
         _startingReplay = true;
         lastTarget = describeTarget(target) + " · replay buffer (" + String(config.replaySeconds || 60) + "s)";
+        activeTarget = target;
         state = "starting";
         recordingElapsed = 0;
         gsr.command = ["gpu-screen-recorder"].concat(args, ["-o", outputDir, "-ipc", ipcSocketPath]);
         prepareDir.command = ["bash", "-c", "mkdir -p " + outputDir + " && mkdir -p " + runtimeDir];
         prepareDir.running = true;
+        applyVolume();
         gsr.running = true;
 
         // compatibility marker for stock pyxis indicators
@@ -265,19 +300,21 @@ Item {
     }
 
     function start(targetType) {
-        if (active || busy)
+        if (active || busy || picking)
             return;
         errorMessage = "";
-        applyVolume();
 
         var streamMode = config.mode === "stream";
 
+        if (needsPick(targetType)) {
+            pickRegion(function () {
+                root.start(targetType);
+            });
+            return;
+        }
         var target = resolveTarget(targetType);
+        pendingRegion = "";
         if (!target) {
-            if (config.targetMode === "region" || targetType === "region") {
-                pickRegion();
-                return;
-            }
             errorMessage = "No capture target available";
             state = "error";
             return;
@@ -310,10 +347,12 @@ Item {
             }
             recordingFile = "";
             lastTarget = describeTarget(target) + " · " + config.streamPlatform;
+            activeTarget = target;
             state = "starting";
             recordingElapsed = 0;
             gsr.command = ["gpu-screen-recorder"].concat(args);
             gsr.environment = {"GSR_AUTH": streamKey};
+            applyVolume();
             gsr.running = true;
             // Ensure the IPC socket dir (and the output dir when a local copy is
             // requested) exists before the recorder starts.
@@ -332,9 +371,11 @@ Item {
         prepareDir.running = true;
 
         lastTarget = describeTarget(target);
+        activeTarget = target;
         state = "starting";
         recordingElapsed = 0;
         gsr.command = args;
+        applyVolume();
         gsr.running = true;
 
         // compatibility marker for stock pyxis indicators
@@ -342,12 +383,74 @@ Item {
         writeMarker.running = true;
     }
 
-    function pickRegion() {
-        regionPicker.command = ["omarchy-capture-region", "smart", "--match-monitor"];
-        regionPicker.running = true;
+    function refreshBinds() {
+        if (bindsProc.running)
+            _bindsRefreshPending = true;
+        else
+            bindsProc.running = true;
+    }
+
+    function applyBindsSnapshot(text) {
+        var sep = text.indexOf("\x1e");
+        var tsv = sep === -1 ? "" : text.substring(0, sep);
+        var binds = [];
+        try {
+            binds = JSON.parse(sep === -1 ? text : text.substring(sep + 1));
+        } catch (e) {}
+        _configBinds = Binds.parseConfigBinds(tsv);
+        _hyprBinds = Array.isArray(binds) ? binds : [];
+        if (!_bindsLoaded) {
+            _bindsLoaded = true;
+            // Leftovers from a shell that went away mid-capture.
+            var stale = Binds.ownedCombos(_hyprBinds, Binds.DESCRIPTION_PREFIX);
+            if (stale.length > 0 && captureKind === "")
+                Quickshell.execDetached(["bash", "-c", Binds.unbindScript(stale, Binds.DESCRIPTION_PREFIX)]);
+        }
+        syncBinds();
+    }
+
+    // Bind the plugin-managed combos for the current capture, unbind the
+    // rest. Safe to call any time; it only sends the difference.
+    function syncBinds() {
+        if (!_bindsLoaded)
+            return;
+        var wanted = captureKind === "" ? [] : Binds.managed(resolvedBinds, captureKind);
+        var script = Binds.syncScript(_boundBinds, wanted, Binds.DESCRIPTION_PREFIX);
+        _boundBinds = wanted;
+        if (script !== "")
+            Quickshell.execDetached(["bash", "-c", script]);
+    }
+
+    // `then` runs after a successful pick; without it the pick is just
+    // kept for the next start.
+    function pickRegion(then) {
+        if (picking)
+            return;
+        _afterPick = typeof then === "function" ? then : null;
+        if (pickerLoader.item)
+            pickerLoader.item.pick();
+        else
+            regionPicker.running = true;
+    }
+
+    function regionPicked(spec) {
+        var then = _afterPick;
+        _afterPick = null;
+        if (!spec) {
+            errorMessage = "Region selection was cancelled";
+            return;
+        }
+        pendingRegion = spec;
+        setSessionConfig("_lastRegion", spec);
+        if (then)
+            then();
     }
 
     function stop() {
+        if (state === "replay") {
+            stopReplay();
+            return;
+        }
         if (!active && state !== "starting")
             return;
         state = "stopping";
@@ -383,45 +486,80 @@ Item {
             resume();
     }
 
+    // Recording: stop and delete the file. Replay: close the buffer unsaved.
+    // Stream: just stop (there is nothing local to discard unless the backup
+    // copy is on, and that copy is the point of the option).
+    function cancel() {
+        if (state === "replay") {
+            stopReplay();
+            return;
+        }
+        if (!active && state !== "starting")
+            return;
+        if (!recordingIsStream)
+            _cancelRequested = true;
+        stop();
+    }
+
     function setConfig(key, value) {
-        var copy = Object.assign({}, config);
-        copy[key] = value;
-        config = Config.normalize(copy);
+        var changes = {};
+        changes[key] = value;
+        setConfigs(changes);
+    }
+
+    // Several keys, one write to shell.json.
+    function setConfigs(changes) {
+        config = Config.normalize(Object.assign({}, config, changes));
         persistConfig();
-        if (key === "mode" && config.mode !== "replay" && state === "replay")
+        if ("mode" in changes && config.mode !== "replay" && state === "replay")
             state = "idle";
-        if (key === "audioVolume" || key === "audioMicVolume" || key === "audioDesktop" || key === "audioMicrophone")
-            applyVolume();
-        if (key === "webcamEnabled" || key === "webcamDevice" || key === "webcamSize")
+        if ("webcamEnabled" in changes || "webcamDevice" in changes || "webcamSize" in changes)
             refreshWebcamDevices();
     }
 
     // Update config in memory only — never persist. Used for session-scoped
     // stream credentials while `streamRemember` is off.
+    // Opt-in (audioSetVolume): set the recorded devices to the configured
+    // levels when a recording starts, and restore them when it ends. Only
+    // the devices actually being recorded are touched.
     function applyVolume() {
-        if (!config.audioEnabled) {
-            setWpctlVolume("DEFAULT_AUDIO_SINK", 0);
-            setWpctlVolume("DEFAULT_AUDIO_SOURCE", 0);
+        _savedAudioSinkVolume = null;
+        _savedAudioSourceVolume = null;
+        if (!config.audioSetVolume || !config.audioEnabled)
             return;
-        }
-        // Read both volumes first, then override. Reading must complete
-        // before setting so restoreVolume() has the correct old levels.
-        _savedAudioSinkVolume = 1.0;
-        _savedAudioSourceVolume = 0.0;
+        if (!config.audioDesktop && !config.audioMicrophone)
+            return;
+        // Read the current levels first so restoreVolume() can put them back.
+        // wpctl get-volume takes a single node, so read each one separately.
         volReadProc.command = ["bash", "-c",
-            "wpctl get-volume @DEFAULT_AUDIO_SINK@ @DEFAULT_AUDIO_SOURCE@ 2>/dev/null | awk '{print $2, $4}'"
+            "echo \"$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print $2}') "
+            + "$(wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | awk '{print $2}')\""
         ];
         volReadProc.running = true;
     }
 
-    function setWpctlVolume(node, volumePercent) {
-        wpctlProc.command = ["bash", "-c", "wpctl set-volume @" + node + "@ " + (volumePercent / 100).toFixed(2)];
+    function wpctlSetCommand(node, level) {
+        return "wpctl set-volume @" + node + "@ " + Number(level).toFixed(2);
+    }
+
+    // One process for all nodes: starting wpctlProc twice in a row drops the
+    // first command.
+    function runWpctl(cmds) {
+        if (cmds.length === 0)
+            return;
+        wpctlProc.command = ["bash", "-c", cmds.join("; ")];
         wpctlProc.running = true;
     }
 
     function restoreVolume() {
-        setWpctlVolume("DEFAULT_AUDIO_SINK", _savedAudioSinkVolume * 100);
-        setWpctlVolume("DEFAULT_AUDIO_SOURCE", _savedAudioSourceVolume * 100);
+        var cmds = [];
+        if (_savedAudioSinkVolume !== null)
+            cmds.push(wpctlSetCommand("DEFAULT_AUDIO_SINK", _savedAudioSinkVolume));
+        if (_savedAudioSourceVolume !== null)
+            cmds.push(wpctlSetCommand("DEFAULT_AUDIO_SOURCE", _savedAudioSourceVolume));
+        _savedAudioSinkVolume = null;
+        _savedAudioSourceVolume = null;
+        runWpctl(cmds);
     }
 
     function setSessionConfig(key, value) {
@@ -461,17 +599,19 @@ Item {
 
     // ── Internals ──
 
+    function targetModeFor(targetType) {
+        return targetType && targetType !== "auto" ? targetType : config.targetMode;
+    }
+
+    function needsPick(targetType) {
+        return targetModeFor(targetType) === "region" && Picker.regionForStart(config, pendingRegion) === "";
+    }
+
+    // A region pick that covers a whole monitor records that monitor.
     function resolveTarget(targetType) {
-        var mode = targetType && targetType !== "auto" ? targetType : config.targetMode;
-        if (mode === "region") {
-            var geom = pendingRegion || config.region || config._lastRegion || "";
-            if (!geom)
-                return null;
-            return {
-                type: "region",
-                geometry: geom
-            };
-        }
+        var mode = targetModeFor(targetType);
+        if (mode === "region")
+            return Picker.targetFromSpec(Picker.regionForStart(config, pendingRegion));
         if (mode === "monitor") {
             var name = config.monitorName || config._lastMonitor || "";
             if (!name && monitors.length > 0)
@@ -543,45 +683,69 @@ Item {
         return true;
     }
 
+    function discardRecording(path) {
+        if (path)
+            Quickshell.execDetached(["rm", "-f", "--", path]);
+        sendNotification("Recording discarded", "The recording was cancelled and deleted.", "normal", 5000);
+    }
+
     function onRecordingSaved() {
         var wasStream = recordingIsStream;
         var wasReplay = _wasReplay;
+        var cancelled = _cancelRequested;
         var saved = recordingFile;
         recordingFile = "";
         recordingIsStream = false;
         _wasReplay = false;
+        _cancelRequested = false;
+        activeTarget = null;
         state = "idle";
         clearMarkerProc.command = ["bash", "-c", "rm -f " + recordingStateFilePath + " " + stateFilePath];
         clearMarkerProc.running = true;
-        if (wasReplay) {
+        if (cancelled) {
+            discardRecording(saved);
+        } else if (wasReplay) {
             sendNotification("Replay buffer stopped", "The rolling buffer was closed without saving.", "normal", 10000);
         } else if (wasStream) {
             sendNotification("Stream ended", "Your live stream has stopped.", "normal", 10000);
         } else if (saved) {
             root._lastSavedPath = saved;
             sendNotification("Screen recording saved", saved, "normal", 10000);
+            runPostProcess(saved);
         }
         restoreVolume();
     }
 
     function onRecordingFailed(msg) {
         _startingReplay = false;
-        errorMessage = msg;
         var wasStream = recordingIsStream;
         var wasReplay = _wasReplay;
+        var cancelled = _cancelRequested;
+        if (!cancelled)
+            errorMessage = msg;
         var saved = recordingFile;
         recordingFile = "";
         recordingIsStream = false;
         _wasReplay = false;
+        _cancelRequested = false;
+        activeTarget = null;
         state = "idle";
         clearMarkerProc.command = ["bash", "-c", "rm -f " + recordingStateFilePath + " " + stateFilePath];
         clearMarkerProc.running = true;
-        if (wasReplay) {
+        if (cancelled) {
+            discardRecording(saved);
+        } else if (wasReplay) {
             sendNotification("Replay buffer crashed", msg, "critical", 8000);
         } else {
             sendNotification(wasStream ? "Stream ended unexpectedly" : "Screen recording failed", msg, "critical", 8000);
         }
         restoreVolume();
+    }
+
+    function runPostProcess(path) {
+        var cmd = PostProcess.command(config, path);
+        if (cmd)
+            Quickshell.execDetached(cmd);
     }
 
     function sendNotification(summary, body, urgency, timeout) {
@@ -708,8 +872,9 @@ Item {
             } else if (root.state === "starting" || root.state === "recording" || root.state === "paused" || root.state === "replay") {
                 root.onRecordingFailed("gpu-screen-recorder exited unexpectedly (code " + exitCode + ")");
             } else {
+                root.activeTarget = null;
                 root.state = "idle";
-                restoreVolume();
+                root.restoreVolume();
             }
         }
     }
@@ -728,9 +893,11 @@ Item {
                 if (out.indexOf("error") === 0) {
                     root.sendNotification("Replay save failed", out, "critical", 8000);
                 } else {
-                    if (out !== "ok")
-                        root._lastSavedPath = out;
                     root.sendNotification("Replay saved", out, "normal", 10000);
+                    if (out !== "ok") {
+                        root._lastSavedPath = out;
+                        root.runPostProcess(out);
+                    }
                 }
             }
         }
@@ -739,41 +906,71 @@ Item {
         id: openProc
     }
 
+    // gsr has no pause event of its own; the state follows the IPC reply.
+    // A stop issued while the reply was in flight wins.
     Process {
         id: ipcPause
+        onExited: function (exitCode) {
+            if (exitCode === 0 && root.state === "recording")
+                root.state = "paused";
+        }
     }
     Process {
         id: ipcResume
+        onExited: function (exitCode) {
+            if (exitCode === 0 && root.state === "paused")
+                root.state = "recording";
+        }
+    }
+
+    Loader {
+        id: pickerLoader
+        source: "RegionPicker.qml"
+    }
+
+    Connections {
+        target: pickerLoader.item
+        function onPicked(spec) {
+            root.regionPicked(spec);
+        }
+        function onCancelled() {
+            root.regionPicked("");
+        }
+    }
+
+    // Only used when RegionPicker.qml fails to load.
+    Process {
+        id: regionPicker
+        command: ["omarchy-capture-region", "smart", "--match-monitor"]
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: root.regionPicked(Picker.specFromCaptureRegion(text))
+        }
     }
 
     Process {
-        id: regionPicker
+        id: bindsProc
+        command: ["bash", "-c", "lua \"$1\" 2>/dev/null; printf '\\036'; hyprctl binds -j", "_", root.readBindsScriptPath]
         stdout: StdioCollector {
             waitForEnd: true
-            onStreamFinished: {
-                var out = text.trim();
-                if (!out || out === "cancelled" || out === "null") {
-                    root.pendingRegion = "";
-                    return;
-                }
-                // Expected output: "WIDTHxHEIGHT+X+Y" (omarchy-capture-region fmt)
-                if (out.match(/^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/)) {
-                    root.pendingRegion = out;
-                    root.setConfig("_lastRegion", out);
-                } else {
-                    // slurry format "X,Y WxH"
-                    var m = out.match(/^(-?[0-9]+),(-?[0-9]+)\s+([0-9]+)x([0-9]+)$/);
-                    if (m) {
-                        var geom = m[3] + "x" + m[4] + "+" + m[1] + "+" + m[2];
-                        root.pendingRegion = geom;
-                        root.setConfig("_lastRegion", geom);
-                    }
-                }
+            onStreamFinished: root.applyBindsSnapshot(text)
+        }
+        onExited: {
+            if (root._bindsRefreshPending) {
+                root._bindsRefreshPending = false;
+                bindsProc.running = true;
             }
         }
-        onExited: function (exitCode) {
-            if (exitCode !== 0 && root.pendingRegion === "") {
-                root.errorMessage = "Region selection was cancelled";
+    }
+
+    // Hyprland drops runtime binds when it reloads its config, and the
+    // reload may have added or removed binds of its own.
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (event && event.name === "configreloaded") {
+                root._boundBinds = [];
+                root.refreshBinds();
             }
         }
     }
@@ -807,16 +1004,16 @@ Item {
                 var parts = out.split(/\s+/)
                 var sink = parseFloat(parts[0])
                 var source = parseFloat(parts[1])
-                if (!isNaN(sink)) root._savedAudioSinkVolume = sink
-                if (!isNaN(source)) root._savedAudioSourceVolume = source
-                if (config.audioDesktop)
-                    setWpctlVolume("DEFAULT_AUDIO_SINK", config.audioVolume || 100)
-                else
-                    setWpctlVolume("DEFAULT_AUDIO_SINK", 0)
-                if (config.audioMicrophone)
-                    setWpctlVolume("DEFAULT_AUDIO_SOURCE", config.audioMicVolume || 100)
-                else
-                    setWpctlVolume("DEFAULT_AUDIO_SOURCE", 0)
+                var cmds = []
+                if (config.audioDesktop && !isNaN(sink)) {
+                    root._savedAudioSinkVolume = sink
+                    cmds.push(root.wpctlSetCommand("DEFAULT_AUDIO_SINK", config.audioVolume / 100))
+                }
+                if (config.audioMicrophone && !isNaN(source)) {
+                    root._savedAudioSourceVolume = source
+                    cmds.push(root.wpctlSetCommand("DEFAULT_AUDIO_SOURCE", config.audioMicVolume / 100))
+                }
+                root.runWpctl(cmds)
             }
         }
     }
@@ -912,7 +1109,10 @@ Item {
             barStatePath: root.barStatePath,
             recordingStateFilePath: root.recordingStateFilePath,
             ipcSocketPath: root.ipcSocketPath,
-            ipcScriptPath: root.ipcScriptPath
+            ipcScriptPath: root.ipcScriptPath,
+            captureKind: root.captureKind,
+            activeTarget: root.activeTarget,
+            resolvedBinds: root.resolvedBinds
         });
     }
 
@@ -944,7 +1144,19 @@ Item {
     onGpuDetectedChanged: { flushState() }
     onGpuInfoChanged: { flushState() }
     onMonitorsChanged: { flushState() }
-    onConfigChanged: { flushState() }
+    onConfigChanged: {
+        flushState();
+        var overrides = Binds.ACTIONS.map(function (a) { return config[a.configKey]; }).join("\n");
+        if (overrides !== _bindOverrides) {
+            _bindOverrides = overrides;
+            refreshBinds();
+        }
+        syncBinds();
+    }
+    onCaptureKindChanged: {
+        flushState();
+        syncBinds();
+    }
     onConfigLoadedChanged: { flushState() }
     onRecordingIsStreamChanged: { flushState() }
     onRecordingFileChanged: { flushState() }
@@ -962,6 +1174,10 @@ Item {
                 root.recordingElapsed = root.recordingBaseSec + Math.floor((Date.now() - root.recordingBaseMs) / 1000);
             }
         }
+    }
+
+    ControlsOverlay {
+        service: root
     }
 
     // IPC target so bar widgets / keybinds can toggle recording even when
@@ -982,6 +1198,16 @@ Item {
 
         function resume(): string {
             root.resume();
+            return "ok";
+        }
+
+        function togglePause(): string {
+            root.togglePause();
+            return "ok";
+        }
+
+        function cancel(): string {
+            root.cancel();
             return "ok";
         }
 
@@ -1016,6 +1242,11 @@ Item {
 
         function stopReplay(): string {
             root.stopReplay();
+            return "ok";
+        }
+
+        function pickRegion(): string {
+            root.pickRegion();
             return "ok";
         }
 

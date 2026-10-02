@@ -9,6 +9,7 @@ function defaultConfig() {
     targetMode: "auto",       // "auto" | "monitor" | "region" | "portal"
     monitorName: "",           // explicit monitor (from --list-monitors)
     region: "",                // "WxH+X+Y" or ""
+    regionAskEachTime: false,  // open the region picker on every start
 
     // Video
     codec: "auto",            // "auto" | "h264" | "hevc" | "av1" | "vp9" | "vp8"
@@ -29,6 +30,7 @@ function defaultConfig() {
     audioMicrophone: false,
     audioCodec: "aac",        // "aac" | "opus"
     audioBitrate: 0,          // 0 = auto
+    audioSetVolume: false,    // set the levels below only while recording
     audioVolume: 100,         // 0-100, desktop audio volume
     audioMicVolume: 100,      // 0-100, microphone volume
     audioDesktopDevice: "default_output",
@@ -63,7 +65,25 @@ function defaultConfig() {
     replayOrganize: false,    // sort replays into date-based folders (-df)
     lowPower: false,          // reduce GPU clocks on AMD; pairs with content frame mode
 
+    // Controls overlay
+    overlayMode: "auto",      // "auto" | "pin" | "timed" | "float" | "off"
+    overlayPrevMode: "auto",  // mode to restore when a popped-out overlay is docked again
+    overlaySeconds: 5,        // 1-60, how long "timed" (and "auto" without a free monitor) stays out
+    overlayEdge: "right",     // "left" | "right" | "top" | "bottom": edge used when no other monitor is free
+    overlayPinned: false,     // pin button on the overlay: keep a peeking overlay out
+
+    // Capture-control keybinds: "" = automatic, else a combo like "SUPER + ALT + P"
+    bindPause: "",
+    bindStop: "",
+    bindCancel: "",
+    bindSaveReplay: "",
+
+    // After capture: open the saved file with a desktop app or a command
+    postProcessApp: "",       // "" = none | "<id>.desktop" | "custom"
+    postProcessCommand: "",   // used when postProcessApp === "custom"; file is passed as "$1"
+
     // UI
+    leftClickMenu: false,     // left click on the bar icon opens the quick menu instead of toggling
     advanced: false,
     showTimer: true,
 
@@ -289,7 +309,7 @@ function normalize(raw) {
     if (k === "audioDesktopDevice" || k === "audioMicDevice") {
       if (typeof v !== "string") v = d[k]
     }
-    if (k === "audioNoiseGate") {
+    if (k === "audioNoiseGate" || k === "audioSetVolume") {
       if (typeof v !== "boolean") v = d[k]
     }
     if (k === "audioCodec" && ["aac", "opus", "flac"].indexOf(v) === -1) v = d[k]
@@ -321,7 +341,8 @@ function normalize(raw) {
     if (k === "cursor" || k === "audioEnabled" || k === "audioDesktop"
         || k === "audioMicrophone" || k === "audioNoiseGate" || k === "advanced" || k === "showTimer"
         || k === "webcamEnabled" || k === "streamRemember"
-        || k === "streamBackupLocal" || k === "replayOrganize" || k === "lowPower") {
+        || k === "streamBackupLocal" || k === "replayOrganize" || k === "lowPower" || k === "overlayPinned"
+        || k === "regionAskEachTime" || k === "leftClickMenu") {
       v = v === true || v === "true" || v === "yes" || v === 1
     }
     if (k === "mode" && ["record", "stream", "replay"].indexOf(v) === -1) v = d[k]
@@ -334,6 +355,18 @@ function normalize(raw) {
     if (k === "webcamSize" && ["small", "medium", "large"].indexOf(v) === -1) v = d[k]
     if (k === "replayStorage" && ["ram", "disk"].indexOf(v) === -1) v = d[k]
     if (k === "webcamDevice" && typeof v !== "string") v = d[k]
+    if (k === "overlayMode" && ["auto", "pin", "timed", "float", "off"].indexOf(v) === -1) v = d[k]
+    if (k === "overlayPrevMode" && ["auto", "pin", "timed", "off"].indexOf(v) === -1) v = d[k]
+    if (k === "overlayEdge" && ["left", "right", "top", "bottom"].indexOf(v) === -1) v = d[k]
+    if (k === "overlaySeconds") {
+      v = Math.round(Number(v))
+      if (isNaN(v)) v = d[k]
+      v = Math.max(1, Math.min(60, v))
+    }
+    if (k === "postProcessApp"
+        && (typeof v !== "string" || (v !== "" && v !== "custom" && !/^[A-Za-z0-9._-]+\.desktop$/.test(v)))) v = d[k]
+    if ((k === "postProcessCommand" || k === "bindPause" || k === "bindStop"
+        || k === "bindCancel" || k === "bindSaveReplay") && typeof v !== "string") v = d[k]
     out[k] = v
   }
   return out

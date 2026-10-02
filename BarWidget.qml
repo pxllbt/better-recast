@@ -5,9 +5,10 @@ import qs.Ui
 import qs.Commons
 
 // pix.recast bar widget — recording state indicator.
-// Idle shows a dimmed resting glyph; left click toggles recording, right click
-// opens the control panel as a popup anchored to the button. While recording
-// the glyph brightens and shows the elapsed time next to it.
+// Idle shows a dimmed resting glyph; left click toggles recording (or opens
+// the quick menu when leftClickMenu is on), right click opens the control
+// panel as a popup anchored to the button. While recording the glyph
+// brightens and shows the elapsed time next to it.
 BarWidget {
     id: root
 
@@ -109,6 +110,9 @@ BarWidget {
     readonly property bool streaming: Boolean(root.service
         ? (root.service.config && (root.service.config.mode || "record") === "stream")
         : (root.serviceState.config && (root.serviceState.config.mode || "record") === "stream"))
+    readonly property bool leftClickMenu: Boolean(root.service
+        ? (root.service.config && root.service.config.leftClickMenu)
+        : (root.serviceState.config && root.serviceState.config.leftClickMenu))
     readonly property bool updateAvailable: panelLoader.item ? (panelLoader.item.updateAvailable === true) : false
     readonly property string updateVersionText: panelLoader.item ? (panelLoader.item.updateNewVersion || "") : ""
 
@@ -152,8 +156,8 @@ BarWidget {
         ? (root.bar ? root.bar.barForeground : Color.foreground)
         : (recording ? (streaming ? Color.urgent : Color.accent) : (root.bar ? root.bar.barForeground : Color.foreground))
     readonly property string tooltipBase: replayActive
-        ? ("Replay buffer · last " + root.replaySeconds + "s · " + root.formatElapsed(root.elapsed) + "\nLeft-click stop buffer · Right-click panel (S saves)")
-        : (recording ? (pausedState ? "Paused" : (streaming ? "Live" : "Recording")) + " · " + formatElapsed(elapsed) + "\nLeft-click to stop · Right-click panel" : (streaming ? "Screen Recorder\nLeft-click to go live · Right-click panel" : "Screen Recorder\nLeft-click to record · Right-click panel"))
+        ? ("Replay buffer · last " + root.replaySeconds + "s · " + root.formatElapsed(root.elapsed) + "\n" + (leftClickMenu ? "Left-click menu · Right-click panel" : "Left-click stop buffer · Right-click panel (S saves)"))
+        : (recording ? (pausedState ? "Paused" : (streaming ? "Live" : "Recording")) + " · " + formatElapsed(elapsed) + "\n" + (leftClickMenu ? "Left-click menu" : "Left-click to stop") + " · Right-click panel" : "Screen Recorder\n" + (leftClickMenu ? "Left-click menu" : (streaming ? "Left-click to go live" : "Left-click to record")) + " · Right-click panel")
     readonly property string tooltip: (updateAvailable && !replayActive && !recording)
         ? tooltipBase + "\nUpdate available: v" + updateVersionText + "\nRight-click panel to check"
         : tooltipBase
@@ -258,7 +262,9 @@ BarWidget {
             if (mouse.button === Qt.RightButton) {
                 root.togglePanel();
             } else if (mouse.button === Qt.LeftButton) {
-                if (root.service && typeof root.service.toggle === "function") {
+                if (root.leftClickMenu) {
+                    quickMenu.toggle();
+                } else if (root.service && typeof root.service.toggle === "function") {
                     root.service.toggle();
                 } else {
                     toggleActionProc.command = ["omarchy-shell", "px-recast", "toggle"];
@@ -270,6 +276,14 @@ BarWidget {
             root.bar.showTooltip(root, root.tooltip)
         onExited: if (root.bar && typeof root.bar.hideTooltip === "function")
             root.bar.hideTooltip(root)
+    }
+
+    QuickMenu {
+        id: quickMenu
+        bar: root.bar
+        anchorItem: root
+        service: root.service
+        serviceState: root.serviceState
     }
 
     Loader {

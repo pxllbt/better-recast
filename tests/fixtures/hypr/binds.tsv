@@ -1,0 +1,4 @@
+64	Terminal	RETURN	exec	ghostty
+12	Discard recording	Print	exec	omarchy-shell px-recast cancel
+73		P	exec	omarchy-shell px-recast pause
+64	Close window	Q	lua	hl.dsp.window.close()

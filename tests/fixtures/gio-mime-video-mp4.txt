@@ -1,0 +1,11 @@
+Default application for “video/mp4”: mpv.desktop
+Registered applications:
+	mpv.desktop
+	omacut.desktop
+	org.kde.kdenlive.desktop
+	vlc.desktop
+Recommended applications:
+	mpv.desktop
+	omacut.desktop
+	org.kde.kdenlive.desktop
+	vlc.desktop

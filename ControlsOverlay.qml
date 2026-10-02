@@ -318,7 +318,7 @@ Scope {
 
         property bool floating: false
         readonly property bool hovered: cardHover.hovered
-        readonly property real pad: Style.space(10)
+        readonly property real pad: Style.space(12)
 
         width: content.implicitWidth + pad * 2
         height: content.implicitHeight + pad * 2
@@ -336,7 +336,7 @@ Scope {
 
             x: cardRoot.pad
             y: cardRoot.pad
-            spacing: Style.space(6)
+            spacing: Style.space(8)
 
             RowLayout {
                 id: header
@@ -359,7 +359,7 @@ Scope {
                 }
 
                 Rectangle {
-                    implicitWidth: Style.space(8)
+                    implicitWidth: Style.space(10)
                     implicitHeight: implicitWidth
                     radius: implicitWidth / 2
                     color: root.statusColor
@@ -370,7 +370,7 @@ Scope {
                     text: root.statusLabel
                     color: Color.foreground
                     font.family: Style.font.family
-                    font.pixelSize: Style.font.caption
+                    font.pixelSize: Style.font.title
                     font.bold: true
                     Layout.alignment: Qt.AlignVCenter
                 }
@@ -380,7 +380,7 @@ Scope {
                     text: root.formatElapsed(root.service.recordingElapsed || 0)
                     color: Color.muted
                     font.family: Style.font.family
-                    font.pixelSize: Style.font.caption
+                    font.pixelSize: Style.font.subtitle
                     Layout.alignment: Qt.AlignVCenter
                 }
 
@@ -393,9 +393,9 @@ Scope {
                     visible: root.canPin && !cardRoot.floating
                     iconText: root.glyph(root.cfg.overlayPinned ? 0xF0404 : 0xF0403)
                     tooltipText: root.cfg.overlayPinned ? "Unpin (hide after a few seconds)" : "Pin (keep visible)"
-                    iconSize: Style.font.caption
-                    horizontalPadding: Style.space(4)
-                    verticalPadding: Style.space(2)
+                    iconSize: Style.font.title
+                    horizontalPadding: Style.space(7)
+                    verticalPadding: Style.space(4)
                     selected: root.cfg.overlayPinned
                     onClicked: root.service.setConfigs({
                         overlayPinned: !root.cfg.overlayPinned
@@ -406,9 +406,9 @@ Scope {
                     iconText: root.glyph(0xF03CC)
                     iconRotation: cardRoot.floating ? 180 : 0
                     tooltipText: cardRoot.floating ? "Dock" : "Pop out (floating window)"
-                    iconSize: Style.font.caption
-                    horizontalPadding: Style.space(4)
-                    verticalPadding: Style.space(2)
+                    iconSize: Style.font.title
+                    horizontalPadding: Style.space(7)
+                    verticalPadding: Style.space(4)
                     onClicked: root.togglePopout()
                 }
             }
@@ -426,8 +426,8 @@ Scope {
                     }
 
                     Layout.fillWidth: true
-                    implicitWidth: rowContent.implicitWidth + Style.space(12)
-                    implicitHeight: rowContent.implicitHeight + Style.space(8)
+                    implicitWidth: rowContent.implicitWidth + Style.space(16)
+                    implicitHeight: rowContent.implicitHeight + Style.space(12)
                     radius: Style.cornerRadius
                     color: rowMouse.containsMouse && rowMouse.enabled
                         ? Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, Style.hoverFillAlpha)
@@ -446,15 +446,15 @@ Scope {
                         id: rowContent
 
                         anchors.verticalCenter: parent.verticalCenter
-                        x: Style.space(6)
-                        width: parent.width - Style.space(12)
+                        x: Style.space(8)
+                        width: parent.width - Style.space(16)
                         spacing: Style.space(6)
 
                         Text {
                             text: row.modelData.label
                             color: Color.foreground
                             font.family: Style.font.family
-                            font.pixelSize: Style.font.caption
+                            font.pixelSize: Style.font.subtitle
                             Layout.fillWidth: true
                             Layout.minimumWidth: implicitWidth
                         }
@@ -467,8 +467,8 @@ Scope {
 
                                 required property string modelData
 
-                                implicitWidth: chipText.implicitWidth + Style.space(8)
-                                implicitHeight: chipText.implicitHeight + Style.space(2)
+                                implicitWidth: chipText.implicitWidth + Style.space(10)
+                                implicitHeight: chipText.implicitHeight + Style.space(4)
                                 radius: Style.space(3)
                                 color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.1)
 
@@ -478,7 +478,7 @@ Scope {
                                     text: chip.modelData
                                     color: row.bind.conflict ? Color.urgent : Color.foreground
                                     font.family: Style.font.family
-                                    font.pixelSize: Style.font.bodySmall
+                                    font.pixelSize: Style.font.body
                                 }
                             }
                         }
@@ -488,14 +488,14 @@ Scope {
                             text: root.glyph(0xF0026)
                             color: Color.urgent
                             font.family: Style.font.family
-                            font.pixelSize: Style.font.caption
+                            font.pixelSize: Style.font.subtitle
                         }
 
                         Text {
                             text: row.bind.conflict ? "not bound" : (Binds.SOURCE_LABELS[row.bind.source] || "")
                             color: Color.muted
                             font.family: Style.font.family
-                            font.pixelSize: Style.font.bodySmall
+                            font.pixelSize: Style.font.body
                             Layout.minimumWidth: implicitWidth
                         }
                     }

@@ -83,6 +83,7 @@ function defaultConfig() {
     postProcessCommand: "",   // used when postProcessApp === "custom"; file is passed as "$1"
 
     // UI
+    leftClickMenu: false,     // left click on the bar icon opens the quick menu instead of toggling
     advanced: false,
     showTimer: true,
 
@@ -341,7 +342,7 @@ function normalize(raw) {
         || k === "audioMicrophone" || k === "audioNoiseGate" || k === "advanced" || k === "showTimer"
         || k === "webcamEnabled" || k === "streamRemember"
         || k === "streamBackupLocal" || k === "replayOrganize" || k === "lowPower" || k === "overlayPinned"
-        || k === "regionAskEachTime") {
+        || k === "regionAskEachTime" || k === "leftClickMenu") {
       v = v === true || v === "true" || v === "yes" || v === 1
     }
     if (k === "mode" && ["record", "stream", "replay"].indexOf(v) === -1) v = d[k]

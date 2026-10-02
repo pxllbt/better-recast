@@ -886,6 +886,40 @@ Panel {
                                 elide: Text.ElideRight
                             }
                         }
+
+                        RowLayout {
+                            width: parent.width
+                            spacing: Style.space(8)
+
+                            ToggleSwitch {
+                                checked: root.cfg.leftClickMenu === true
+                                foreground: root.foreground
+                                accent: root.accent
+                                Layout.alignment: Qt.AlignVCenter
+                                onToggled: root.setConfig("leftClickMenu", !root.cfg.leftClickMenu)
+                            }
+
+                            Column {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+
+                                Text {
+                                    text: "Left-click menu"
+                                    color: root.foreground
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.caption
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: "Left-click the bar icon to pick capture type and target, then start"
+                                    color: root.muted
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.caption
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
                     }
 
                     PanelSeparator {

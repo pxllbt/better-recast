@@ -306,5 +306,10 @@ test("normalize keeps regionAskEachTime a boolean, off by default", () => {
     assert.equal(Config.normalize({ regionAskEachTime: "true" }).regionAskEachTime, true);
 });
 
+test("normalize keeps leftClickMenu a boolean, off by default", () => {
+    assert.equal(Config.normalize({}).leftClickMenu, false);
+    assert.equal(Config.normalize({ leftClickMenu: "true" }).leftClickMenu, true);
+});
+
 console.log("  passed: " + passed + "  failed: " + failed);
 process.exit(failed === 0 ? 0 : 1);

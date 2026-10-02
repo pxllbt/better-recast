@@ -70,9 +70,6 @@ function defaultConfig() {
     overlaySeconds: 5,        // 1-60, how long "timed" (and "auto" without a free monitor) stays out
     overlayEdge: "right",     // "left" | "right" | "top" | "bottom": edge used when no other monitor is free
     overlayPinned: false,     // pin button on the overlay: keep a peeking overlay out
-    overlayFloatScreen: "",   // screen for "float" ("" = the screen auto placement picks)
-    overlayFloatX: -1,        // -1 = centered
-    overlayFloatY: -1,
 
     // Capture-control keybinds: "" = automatic, else a combo like "SUPER + ALT + P"
     bindPause: "",
@@ -363,11 +360,6 @@ function normalize(raw) {
       if (isNaN(v)) v = d[k]
       v = Math.max(1, Math.min(60, v))
     }
-    if (k === "overlayFloatX" || k === "overlayFloatY") {
-      v = Math.round(Number(v))
-      if (isNaN(v) || v < 0) v = -1
-    }
-    if (k === "overlayFloatScreen" && typeof v !== "string") v = d[k]
     if (k === "postProcessApp"
         && (typeof v !== "string" || (v !== "" && v !== "custom" && !/^[A-Za-z0-9._-]+\.desktop$/.test(v)))) v = d[k]
     if ((k === "postProcessCommand" || k === "bindPause" || k === "bindStop"

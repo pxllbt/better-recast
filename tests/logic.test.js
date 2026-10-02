@@ -201,9 +201,9 @@ test("the free screen nearest the recording wins, stacked vertically too", () =>
 });
 
 test("normalize clamps and validates overlay keys", () => {
-    const c = Config.normalize({ overlayMode: "sideways", overlayPrevMode: "float", overlaySeconds: 99, overlayEdge: "top", overlayFloatX: "abc", overlayFloatY: 120.6, overlayPinned: "true" });
-    assert.deepEqual([c.overlayMode, c.overlayPrevMode, c.overlaySeconds, c.overlayEdge, c.overlayFloatX, c.overlayFloatY, c.overlayPinned],
-        ["auto", "auto", 60, "top", -1, 121, true]);
+    const c = Config.normalize({ overlayMode: "sideways", overlayPrevMode: "float", overlaySeconds: 99, overlayEdge: "top", overlayPinned: "true" });
+    assert.deepEqual([c.overlayMode, c.overlayPrevMode, c.overlaySeconds, c.overlayEdge, c.overlayPinned],
+        ["auto", "auto", 60, "top", true]);
 });
 
 console.log("  passed: " + passed + "  failed: " + failed);

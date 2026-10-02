@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Window
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
@@ -10,11 +11,12 @@ import qs.Ui
 import "Binds.js" as Binds
 import "Placement.js" as Placement
 
-// Capture controls on a layer surface: status, elapsed time and one row per
-// action with its keybind. Shown while a capture runs, and as a preview while
-// the settings panel is open. Placement.js picks the screen and edge; the
-// surface never takes keyboard focus and only the card (or the hover strip it
-// tucks into) takes pointer input.
+// Capture controls: status, elapsed time and one row per action with its
+// keybind. Shown while a capture runs, and as a preview while the settings
+// panel is open. Docked, it's a layer surface on the screen and edge
+// Placement.js picks, never taking keyboard focus, with pointer input only on
+// the card (or the hover strip it tucks into). Popped out, it's a floating,
+// pinned Hyprland window, so the compositor does the dragging.
 Scope {
     id: root
 
@@ -75,8 +77,6 @@ Scope {
     readonly property string screenName: {
         if (!placement)
             return "";
-        if (kind === "float" && screenList.some(function (s) { return s.name === root.cfg.overlayFloatScreen; }))
-            return cfg.overlayFloatScreen;
         return placement.screen;
     }
 
@@ -136,24 +136,34 @@ Scope {
         return String.fromCodePoint(codePoint);
     }
 
-    function togglePopout(win, card) {
-        if (cfg.overlayMode === "float") {
+    readonly property string floatTitle: "Better Recast controls"
+
+    // Hyprland drops runtime rules on config reload, so this is re-sent then.
+    function applyFloatRule() {
+        Quickshell.execDetached(["hyprctl", "eval", 'hl.window_rule({ match = { title = "^' + floatTitle
+            + '$" }, float = true, pin = true, center = true, no_initial_focus = true, no_screen_share = true })']);
+    }
+
+    Component.onCompleted: applyFloatRule()
+
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (event && event.name === "configreloaded")
+                root.applyFloatRule();
+        }
+    }
+
+    function togglePopout() {
+        if (cfg.overlayMode === "float")
             service.setConfigs({
                 overlayMode: cfg.overlayPrevMode
             });
-            return;
-        }
-        // Pop out where it is, so the card doesn't jump. The docked surface
-        // only spans its edge, so offset by where that strip sits on screen.
-        var originX = edge === "right" ? win.modelData.width - win.width : 0;
-        var originY = edge === "bottom" ? win.modelData.height - win.height : 0;
-        service.setConfigs({
-            overlayPrevMode: cfg.overlayMode,
-            overlayMode: "float",
-            overlayFloatScreen: win.modelData.name,
-            overlayFloatX: Math.round(originX + card.x),
-            overlayFloatY: Math.round(originY + card.y)
-        });
+        else
+            service.setConfigs({
+                overlayPrevMode: cfg.overlayMode,
+                overlayMode: "float"
+            });
     }
 
     Variants {
@@ -164,36 +174,30 @@ Scope {
 
             required property ShellScreen modelData
 
-            readonly property bool floating: root.kind === "float"
             readonly property bool sideEdge: root.edge === "left" || root.edge === "right"
-            readonly property bool pointerInside: cardHover.hovered || stripHover.hovered
+            readonly property bool pointerInside: card.hovered || stripHover.hovered
 
             // 0 is tucked past the edge, 1 fully in.
             property real slide: root.revealed ? 1 : 0
             readonly property real tucked: (1 - slide) * ((sideEdge ? card.width : card.height) + 2)
 
-            property point pressAt: Qt.point(0, 0)
-            property real dragX: 0
-            property real dragY: 0
-
             screen: modelData
-            visible: root.kind !== "" && modelData !== null && modelData.name === root.screenName && !remap.remapping
+            visible: root.kind !== "" && root.kind !== "float" && modelData !== null && modelData.name === root.screenName && !remap.remapping
             color: "transparent"
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "px-recast-controls"
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-            // Pinned/peek: a strip along the whole edge, as deep as the card.
-            // Float: the whole screen, so the card can be dragged anywhere.
+            // A strip along the whole edge, as deep as the card.
             anchors {
-                left: win.floating || root.edge !== "right"
-                right: win.floating || root.edge !== "left"
-                top: win.floating || root.edge !== "bottom"
-                bottom: win.floating || root.edge !== "top"
+                left: root.edge !== "right"
+                right: root.edge !== "left"
+                top: root.edge !== "bottom"
+                bottom: root.edge !== "top"
             }
-            implicitWidth: !floating && sideEdge ? card.width : 0
-            implicitHeight: !floating && !sideEdge ? card.height : 0
+            implicitWidth: sideEdge ? card.width : 0
+            implicitHeight: sideEdge ? 0 : card.height
 
             mask: Region {
                 item: root.revealed ? card : hotStrip
@@ -239,7 +243,7 @@ Scope {
                 id: hideTimer
                 interval: 400
                 onTriggered: {
-                    if (!win.pointerInside && !drag.active)
+                    if (!win.pointerInside)
                         root.hoverShown = false;
                 }
             }
@@ -261,219 +265,238 @@ Scope {
                 }
             }
 
-            Rectangle {
+            ControlsCard {
                 id: card
 
-                readonly property real pad: Style.space(10)
-                readonly property real homeX: root.cfg.overlayFloatX < 0 ? (win.width - width) / 2 : root.cfg.overlayFloatX
-                readonly property real homeY: root.cfg.overlayFloatY < 0 ? (win.height - height) / 2 : root.cfg.overlayFloatY
-
-                width: content.implicitWidth + pad * 2
-                height: content.implicitHeight + pad * 2
                 visible: win.slide > 0.001
-                radius: Style.cornerRadius
-                color: Color.background
-                border.width: 1
-                border.color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.15)
-
                 x: {
-                    if (win.floating)
-                        return Math.max(0, Math.min(win.width - width, homeX + win.dragX));
                     if (win.sideEdge)
                         return root.edge === "right" ? win.width - width + win.tucked : -win.tucked;
                     return Math.round((win.width - width) / 2);
                 }
                 y: {
-                    if (win.floating)
-                        return Math.max(0, Math.min(win.height - height, homeY + win.dragY));
                     if (win.sideEdge)
                         return Math.round((win.height - height) / 2);
                     return root.edge === "bottom" ? win.height - height + win.tucked : -win.tucked;
                 }
+            }
+        }
+    }
 
-                HoverHandler {
-                    id: cardHover
+    FloatingWindow {
+        id: floatWin
+
+        readonly property bool wanted: root.kind === "float"
+        // Set while the window is meant to be up, so a close from Hyprland
+        // (not from the dock button) can be told apart and docks it.
+        property bool shown: false
+
+        visible: wanted
+        title: root.floatTitle
+        color: Color.background
+        implicitWidth: floatCard.width
+        implicitHeight: floatCard.height
+
+        onVisibleChanged: {
+            if (visible) {
+                shown = true;
+                return;
+            }
+            if (shown && wanted && root.cfg.overlayMode === "float")
+                root.togglePopout();
+            shown = false;
+        }
+
+        ControlsCard {
+            id: floatCard
+            floating: true
+        }
+    }
+
+    component ControlsCard: Rectangle {
+        id: cardRoot
+
+        property bool floating: false
+        readonly property bool hovered: cardHover.hovered
+        readonly property real pad: Style.space(10)
+
+        width: content.implicitWidth + pad * 2
+        height: content.implicitHeight + pad * 2
+        radius: floating ? 0 : Style.cornerRadius
+        color: Color.background
+        border.width: floating ? 0 : 1
+        border.color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.15)
+
+        HoverHandler {
+            id: cardHover
+        }
+
+        ColumnLayout {
+            id: content
+
+            x: cardRoot.pad
+            y: cardRoot.pad
+            spacing: Style.space(6)
+
+            RowLayout {
+                id: header
+
+                Layout.fillWidth: true
+                spacing: Style.space(8)
+
+                // Floating: the header moves the window. A DragHandler with no
+                // target hands the drag to the compositor instead of
+                // re-positioning from QML, which lags and jumps.
+                DragHandler {
+                    target: null
+                    enabled: cardRoot.floating
+                    dragThreshold: 0
+                    acceptedButtons: Qt.LeftButton
+                    onActiveChanged: {
+                        if (active && header.Window.window)
+                            header.Window.window.startSystemMove();
+                    }
                 }
 
-                ColumnLayout {
-                    id: content
+                Rectangle {
+                    implicitWidth: Style.space(8)
+                    implicitHeight: implicitWidth
+                    radius: implicitWidth / 2
+                    color: root.statusColor
+                    Layout.alignment: Qt.AlignVCenter
+                }
 
-                    x: card.pad
-                    y: card.pad
-                    spacing: Style.space(6)
+                Text {
+                    text: root.statusLabel
+                    color: Color.foreground
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                Text {
+                    visible: !root.previewing
+                    text: root.formatElapsed(root.service.recordingElapsed || 0)
+                    color: Color.muted
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: Style.space(12)
+                }
+
+                Button {
+                    visible: root.canPin && !cardRoot.floating
+                    iconText: root.glyph(root.cfg.overlayPinned ? 0xF0404 : 0xF0403)
+                    tooltipText: root.cfg.overlayPinned ? "Unpin (hide after a few seconds)" : "Pin (keep visible)"
+                    iconSize: Style.font.caption
+                    horizontalPadding: Style.space(4)
+                    verticalPadding: Style.space(2)
+                    selected: root.cfg.overlayPinned
+                    onClicked: root.service.setConfigs({
+                        overlayPinned: !root.cfg.overlayPinned
+                    })
+                }
+
+                Button {
+                    iconText: root.glyph(0xF03CC)
+                    iconRotation: cardRoot.floating ? 180 : 0
+                    tooltipText: cardRoot.floating ? "Dock" : "Pop out (floating window)"
+                    iconSize: Style.font.caption
+                    horizontalPadding: Style.space(4)
+                    verticalPadding: Style.space(2)
+                    onClicked: root.togglePopout()
+                }
+            }
+            Repeater {
+                model: root.actions
+
+                Rectangle {
+                    id: row
+
+                    required property var modelData
+                    readonly property var bind: root.service.resolvedBinds[modelData.id] || {
+                        combo: "",
+                        source: "none",
+                        conflict: false
+                    }
+
+                    Layout.fillWidth: true
+                    implicitWidth: rowContent.implicitWidth + Style.space(12)
+                    implicitHeight: rowContent.implicitHeight + Style.space(8)
+                    radius: Style.cornerRadius
+                    color: rowMouse.containsMouse && rowMouse.enabled
+                        ? Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, Style.hoverFillAlpha)
+                        : "transparent"
+
+                    MouseArea {
+                        id: rowMouse
+                        anchors.fill: parent
+                        enabled: !root.previewing
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: root.service[row.modelData.ipc]()
+                    }
 
                     RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Style.space(8)
+                        id: rowContent
 
-                        // Float: the header is the drag handle.
-                        DragHandler {
-                            id: drag
-                            target: null
-                            enabled: win.floating
-                            onActiveChanged: {
-                                if (active) {
-                                    win.pressAt = centroid.scenePosition;
-                                    return;
-                                }
-                                root.service.setConfigs({
-                                    overlayFloatScreen: win.modelData.name,
-                                    overlayFloatX: Math.round(card.x),
-                                    overlayFloatY: Math.round(card.y)
-                                });
-                                win.dragX = 0;
-                                win.dragY = 0;
-                            }
-                            onCentroidChanged: {
-                                if (!active)
-                                    return;
-                                win.dragX = centroid.scenePosition.x - win.pressAt.x;
-                                win.dragY = centroid.scenePosition.y - win.pressAt.y;
-                            }
-                        }
-
-                        Rectangle {
-                            implicitWidth: Style.space(8)
-                            implicitHeight: implicitWidth
-                            radius: implicitWidth / 2
-                            color: root.statusColor
-                            Layout.alignment: Qt.AlignVCenter
-                        }
+                        anchors.verticalCenter: parent.verticalCenter
+                        x: Style.space(6)
+                        width: parent.width - Style.space(12)
+                        spacing: Style.space(6)
 
                         Text {
-                            text: root.statusLabel
+                            text: row.modelData.label
                             color: Color.foreground
                             font.family: Style.font.family
                             font.pixelSize: Style.font.caption
-                            font.bold: true
-                            Layout.alignment: Qt.AlignVCenter
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: implicitWidth
+                        }
+
+                        Repeater {
+                            model: row.bind.combo === "" ? [] : row.bind.combo.split(" + ")
+
+                            Rectangle {
+                                id: chip
+
+                                required property string modelData
+
+                                implicitWidth: chipText.implicitWidth + Style.space(8)
+                                implicitHeight: chipText.implicitHeight + Style.space(2)
+                                radius: Style.space(3)
+                                color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.1)
+
+                                Text {
+                                    id: chipText
+                                    anchors.centerIn: parent
+                                    text: chip.modelData
+                                    color: row.bind.conflict ? Color.urgent : Color.foreground
+                                    font.family: Style.font.family
+                                    font.pixelSize: Style.font.bodySmall
+                                }
+                            }
                         }
 
                         Text {
-                            visible: !root.previewing
-                            text: root.formatElapsed(root.service.recordingElapsed || 0)
-                            color: Color.muted
+                            visible: row.bind.conflict
+                            text: root.glyph(0xF0026)
+                            color: Color.urgent
                             font.family: Style.font.family
                             font.pixelSize: Style.font.caption
-                            Layout.alignment: Qt.AlignVCenter
                         }
 
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.minimumWidth: Style.space(12)
-                        }
-
-                        Button {
-                            visible: root.canPin
-                            iconText: root.glyph(root.cfg.overlayPinned ? 0xF0404 : 0xF0403)
-                            tooltipText: root.cfg.overlayPinned ? "Unpin (hide after a few seconds)" : "Pin (keep visible)"
-                            iconSize: Style.font.caption
-                            horizontalPadding: Style.space(4)
-                            verticalPadding: Style.space(2)
-                            selected: root.cfg.overlayPinned
-                            onClicked: root.service.setConfigs({
-                                overlayPinned: !root.cfg.overlayPinned
-                            })
-                        }
-
-                        Button {
-                            iconText: root.glyph(0xF03CC)
-                            iconRotation: win.floating ? 180 : 0
-                            tooltipText: win.floating ? "Dock" : "Pop out (drag to move)"
-                            iconSize: Style.font.caption
-                            horizontalPadding: Style.space(4)
-                            verticalPadding: Style.space(2)
-                            onClicked: root.togglePopout(win, card)
-                        }
-                    }
-
-                    Repeater {
-                        model: root.actions
-
-                        Rectangle {
-                            id: row
-
-                            required property var modelData
-                            readonly property var bind: root.service.resolvedBinds[modelData.id] || {
-                                combo: "",
-                                source: "none",
-                                conflict: false
-                            }
-
-                            Layout.fillWidth: true
-                            implicitWidth: rowContent.implicitWidth + Style.space(12)
-                            implicitHeight: rowContent.implicitHeight + Style.space(8)
-                            radius: Style.cornerRadius
-                            color: rowMouse.containsMouse && rowMouse.enabled
-                                ? Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, Style.hoverFillAlpha)
-                                : "transparent"
-
-                            MouseArea {
-                                id: rowMouse
-                                anchors.fill: parent
-                                enabled: !root.previewing
-                                hoverEnabled: true
-                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: root.service[row.modelData.ipc]()
-                            }
-
-                            RowLayout {
-                                id: rowContent
-
-                                anchors.verticalCenter: parent.verticalCenter
-                                x: Style.space(6)
-                                width: parent.width - Style.space(12)
-                                spacing: Style.space(6)
-
-                                Text {
-                                    text: row.modelData.label
-                                    color: Color.foreground
-                                    font.family: Style.font.family
-                                    font.pixelSize: Style.font.caption
-                                    Layout.fillWidth: true
-                                    Layout.minimumWidth: implicitWidth
-                                }
-
-                                Repeater {
-                                    model: row.bind.combo === "" ? [] : row.bind.combo.split(" + ")
-
-                                    Rectangle {
-                                        id: chip
-
-                                        required property string modelData
-
-                                        implicitWidth: chipText.implicitWidth + Style.space(8)
-                                        implicitHeight: chipText.implicitHeight + Style.space(2)
-                                        radius: Style.space(3)
-                                        color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.1)
-
-                                        Text {
-                                            id: chipText
-                                            anchors.centerIn: parent
-                                            text: chip.modelData
-                                            color: row.bind.conflict ? Color.urgent : Color.foreground
-                                            font.family: Style.font.family
-                                            font.pixelSize: Style.font.bodySmall
-                                        }
-                                    }
-                                }
-
-                                Text {
-                                    visible: row.bind.conflict
-                                    text: root.glyph(0xF0026)
-                                    color: Color.urgent
-                                    font.family: Style.font.family
-                                    font.pixelSize: Style.font.caption
-                                }
-
-                                Text {
-                                    text: row.bind.conflict ? "not bound" : (Binds.SOURCE_LABELS[row.bind.source] || "")
-                                    color: Color.muted
-                                    font.family: Style.font.family
-                                    font.pixelSize: Style.font.bodySmall
-                                    Layout.minimumWidth: implicitWidth
-                                }
-                            }
+                        Text {
+                            text: row.bind.conflict ? "not bound" : (Binds.SOURCE_LABELS[row.bind.source] || "")
+                            color: Color.muted
+                            font.family: Style.font.family
+                            font.pixelSize: Style.font.bodySmall
+                            Layout.minimumWidth: implicitWidth
                         }
                     }
                 }

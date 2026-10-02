@@ -10,8 +10,7 @@ import "Picker.js" as Picker
 
 // Region / window picker: dims every screen and hints the window under the
 // pointer. Left drag draws a region; a bare left click takes the window (or
-// monitor) under it. Right press-and-release takes a window, with a confirm
-// flash. Every surface is unmapped before `picked` fires, so none of it ends
+// monitor) under it. Right press-and-release takes a window. Every surface is unmapped before `picked` fires, so none of it ends
 // up in the capture.
 Scope {
     id: root
@@ -19,9 +18,9 @@ Scope {
     signal picked(string spec)
     signal cancelled
 
-    property string phase: "idle" // idle | loading | picking | confirming | closing
+    property string phase: "idle" // idle | loading | picking | closing
     readonly property bool busy: phase !== "idle"
-    readonly property bool shown: phase === "picking" || phase === "confirming"
+    readonly property bool shown: phase === "picking"
 
     property var monitors: []
     property var windows: []
@@ -32,14 +31,10 @@ Scope {
     property bool dragging: false
     property point dragFrom: Qt.point(0, 0)
     property bool grabbing: false
-    property var confirmRect: null
-    property real pulse: 0
     property string _result: ""
 
     readonly property var hovered: pointerKnown ? Picker.windowAt(windows, pointer.x, pointer.y) : null
     readonly property var selection: {
-        if (confirmRect)
-            return confirmRect;
         if (dragging)
             return Picker.dragRect(dragFrom.x, dragFrom.y, pointer.x, pointer.y);
         return hovered;
@@ -53,8 +48,6 @@ Scope {
         pointerKnown = false;
         dragging = false;
         grabbing = false;
-        confirmRect = null;
-        pulse = 0;
         phase = "loading";
         snapshotProc.running = true;
     }
@@ -67,7 +60,6 @@ Scope {
     // The compositor needs a frame or two to drop the surfaces after they
     // unmap; the recorder must not start before that.
     function finish(spec) {
-        confirmAnim.stop();
         _result = spec;
         phase = "closing";
         settleTimer.restart();
@@ -115,11 +107,8 @@ Scope {
         if (button === Qt.RightButton && grabbing) {
             grabbing = false;
             var win = Picker.windowAt(windows, x, y);
-            if (win) {
-                confirmRect = win;
-                phase = "confirming";
-                confirmAnim.restart();
-            }
+            if (win)
+                finish(Picker.specForRect(win, monitors));
         } else if (button === Qt.LeftButton && dragging) {
             dragging = false;
             var rect = Picker.dragRect(dragFrom.x, dragFrom.y, x, y);
@@ -160,34 +149,10 @@ Scope {
         interval: 150
         onTriggered: {
             root.phase = "idle";
-            root.confirmRect = null;
             if (root._result !== "")
                 root.picked(root._result);
             else
                 root.cancelled();
-        }
-    }
-
-    SequentialAnimation {
-        id: confirmAnim
-        loops: 2
-        onFinished: root.finish(Picker.specForRect(root.confirmRect, root.monitors))
-
-        NumberAnimation {
-            target: root
-            property: "pulse"
-            from: 0
-            to: 1
-            duration: 300
-            easing.type: Easing.OutCubic
-        }
-        NumberAnimation {
-            target: root
-            property: "pulse"
-            from: 1
-            to: 0
-            duration: 300
-            easing.type: Easing.InCubic
         }
     }
 
@@ -260,15 +225,14 @@ Scope {
             Rectangle {
                 readonly property bool strong: root.grabbing && root.hovered !== null
 
-                visible: win.local !== null && (root.dragging || root.confirmRect !== null || root.hovered !== null)
+                visible: win.local !== null && (root.dragging || root.hovered !== null)
                 x: win.local ? win.local.x : 0
                 y: win.local ? win.local.y : 0
                 width: win.local ? win.local.w : 0
                 height: win.local ? win.local.h : 0
-                color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, root.confirmRect ? 0.25 * root.pulse : (strong ? 0.18 : 0))
+                color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, strong ? 0.18 : 0)
                 border.color: Color.accent
-                border.width: root.confirmRect ? Math.round(2 + 4 * root.pulse) : (strong || root.dragging ? 4 : 2)
-                opacity: root.confirmRect ? 0.4 + 0.6 * root.pulse : 1
+                border.width: strong || root.dragging ? 4 : 2
             }
 
             MouseArea {

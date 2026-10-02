@@ -31,7 +31,7 @@ automatic hardware and encoder detection.
   - CPU fallback — H.264, QP, medium
 - Hardware probing via `gpu-screen-recorder --info` (primary) with DRM/nvidia-smi fallbacks
 - Region, monitor, or window/portal capture
-- **Built-in region picker**: dims the screens and outlines the window under the pointer. Drag to draw a region, click to take that window (or the whole monitor), or press and release the right button on a window to take it with a confirm flash. Escape cancels. `omarchy-shell px-recast pickRegion` opens it from a keybind. A pick covering a whole monitor records that monitor. Picking from a start begins the capture right after the pick, once the picker is off screen
+- **Built-in region picker**: dims the screens and outlines the window under the pointer. Drag to draw a region, click to take that window (or the whole monitor), or press and release the right button on a window to take it. Escape cancels. `omarchy-shell px-recast pickRegion` opens it from a keybind. A pick covering a whole monitor records that monitor. Picking from a start begins the capture right after the pick, once the picker is off screen
 - **Pick a new region each time** (opt-in): every start opens the picker instead of reusing the last region
 - Pause / resume over the GSR unix-socket IPC (`scripts/gsr-ipc.py`), with the elapsed timer held while paused
 - Runtime settings persisted inline to `~/.config/omarchy/shell.json` (entry `pix.recast`)

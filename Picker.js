@@ -124,3 +124,14 @@ function targetFromSpec(spec) {
     return s.length > 8 ? { type: "monitor", name: s.substring(8) } : null
   return /^[0-9]+x[0-9]+\+-?[0-9]+\+-?[0-9]+$/.test(s) ? { type: "region", geometry: s } : null
 }
+
+// The region a start records: a fresh pick, else the saved one unless every
+// start asks for a new pick. "" = open the picker first.
+function regionForStart(config, pending) {
+  if (pending)
+    return pending
+  if (config.regionAskEachTime)
+    return ""
+  var saved = config.region || config._lastRegion || ""
+  return targetFromSpec(saved) ? saved : ""
+}

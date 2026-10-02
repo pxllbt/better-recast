@@ -9,6 +9,7 @@ function defaultConfig() {
     targetMode: "auto",       // "auto" | "monitor" | "region" | "portal"
     monitorName: "",           // explicit monitor (from --list-monitors)
     region: "",                // "WxH+X+Y" or ""
+    regionAskEachTime: false,  // open the region picker on every start
 
     // Video
     codec: "auto",            // "auto" | "h264" | "hevc" | "av1" | "vp9" | "vp8"
@@ -339,7 +340,8 @@ function normalize(raw) {
     if (k === "cursor" || k === "audioEnabled" || k === "audioDesktop"
         || k === "audioMicrophone" || k === "audioNoiseGate" || k === "advanced" || k === "showTimer"
         || k === "webcamEnabled" || k === "streamRemember"
-        || k === "streamBackupLocal" || k === "replayOrganize" || k === "lowPower" || k === "overlayPinned") {
+        || k === "streamBackupLocal" || k === "replayOrganize" || k === "lowPower" || k === "overlayPinned"
+        || k === "regionAskEachTime") {
       v = v === true || v === "true" || v === "yes" || v === 1
     }
     if (k === "mode" && ["record", "stream", "replay"].indexOf(v) === -1) v = d[k]

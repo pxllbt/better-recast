@@ -292,5 +292,19 @@ test("targetFromSpec turns a spec into a capture target", () => {
     assert.equal(Picker.targetFromSpec("monitor:"), null);
 });
 
+test("regionForStart: a fresh pick, else the saved region unless asking each time", () => {
+    const saved = { region: "", _lastRegion: "800x600+0+0", regionAskEachTime: false };
+    assert.equal(Picker.regionForStart(saved, ""), "800x600+0+0");
+    assert.equal(Picker.regionForStart(saved, "monitor:DP-9"), "monitor:DP-9");
+    assert.equal(Picker.regionForStart(Object.assign({}, saved, { regionAskEachTime: true }), ""), "");
+    assert.equal(Picker.regionForStart(Object.assign({}, saved, { regionAskEachTime: true }), "10x10+5+5"), "10x10+5+5");
+    assert.equal(Picker.regionForStart({ region: "", _lastRegion: "" }, ""), "");
+});
+
+test("normalize keeps regionAskEachTime a boolean, off by default", () => {
+    assert.equal(Config.normalize({}).regionAskEachTime, false);
+    assert.equal(Config.normalize({ regionAskEachTime: "true" }).regionAskEachTime, true);
+});
+
 console.log("  passed: " + passed + "  failed: " + failed);
 process.exit(failed === 0 ? 0 : 1);

@@ -604,15 +604,14 @@ Item {
     }
 
     function needsPick(targetType) {
-        return targetModeFor(targetType) === "region" && pendingRegion === ""
-            && !Picker.targetFromSpec(config.region || config._lastRegion);
+        return targetModeFor(targetType) === "region" && Picker.regionForStart(config, pendingRegion) === "";
     }
 
     // A region pick that covers a whole monitor records that monitor.
     function resolveTarget(targetType) {
         var mode = targetModeFor(targetType);
         if (mode === "region")
-            return Picker.targetFromSpec(pendingRegion || config.region || config._lastRegion);
+            return Picker.targetFromSpec(Picker.regionForStart(config, pendingRegion));
         if (mode === "monitor") {
             var name = config.monitorName || config._lastMonitor || "";
             if (!name && monitors.length > 0)

@@ -862,6 +862,30 @@ Panel {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
                         }
+
+                        RowLayout {
+                            width: parent.width
+                            spacing: Style.space(8)
+                            visible: (root.cfg.targetMode || "portal") === "region"
+
+                            ToggleSwitch {
+                                checked: root.cfg.regionAskEachTime === true
+                                foreground: root.foreground
+                                accent: root.accent
+                                Layout.alignment: Qt.AlignVCenter
+                                onToggled: root.setConfig("regionAskEachTime", !root.cfg.regionAskEachTime)
+                            }
+
+                            Text {
+                                text: "Pick a new region each time"
+                                color: root.foreground
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                                elide: Text.ElideRight
+                            }
+                        }
                     }
 
                     PanelSeparator {

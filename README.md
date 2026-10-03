@@ -1,5 +1,9 @@
 # Better Recast — GPU Screen Recording Plugin for Omarchy
 
+![Omarchy](https://img.shields.io/badge/Omarchy-4.x-1e66f5?style=flat-square)
+![QML](https://img.shields.io/badge/QML-Quickshell-1e66f5?style=flat-square)
+![License](https://img.shields.io/badge/License-MIT-1e66f5?style=flat-square)
+
 GPU-accelerated screen recording for the Omarchy shell, backed by
 [gpu-screen-recorder](https://git.dec05eba.com/gpu-screen-recorder/about/) with
 automatic hardware and encoder detection.

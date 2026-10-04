@@ -42,7 +42,7 @@ automatic hardware and encoder detection.
 ## Install
 
 ```
-omarchy plugin add https://github.com/pxllbt/Better-Recast.git --enable
+omarchy plugin add https://github.com/pxllbt/better-recast.git --enable
 omarchy plugin enable pix.recast
 omarchy-shell shell toggle pix.recast   # open the control panel
 omarchy-shell bar layout right add pix.recast   # add the bar indicator

@@ -4,7 +4,7 @@
 set -uo pipefail
 
 PLUGIN_ID="pix.recast"
-REPO="pxllbt/Better-Recast"
+REPO="pxllbt/better-recast"
 BRANCH="main"
 RAW_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}/manifest.json"
 

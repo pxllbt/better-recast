@@ -1,4 +1,4 @@
-# Better Recast — GPU Screen Recording Plugin for Omarchy
+# Better Recast
 
 ![Omarchy](https://img.shields.io/badge/Omarchy-4.x-1e66f5?style=flat-square)
 ![QML](https://img.shields.io/badge/QML-Quickshell-1e66f5?style=flat-square)

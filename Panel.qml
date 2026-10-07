@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Quickshell
 import Quickshell.Io
 import qs.Ui
 import qs.Commons
@@ -28,6 +29,7 @@ Panel {
     property var manifest: null
     property var service: null
     property var serviceState: ({})
+
     // Optimistic override for config keys set while the service is unreachable.
     // Cleared when the state file is next polled and confirms the change.
     property var _pendingConfig: ({})
@@ -96,7 +98,7 @@ Panel {
     // ---- theme --------------------------------------------------------------
     // Writable, not readonly, so a host that embeds this panel can supply its
     // own palette. Defaults are Omarchy's, which is right when the panel is
-    // summoned from the Omarchy bar. A replacement bar (e.g. Ukishima) renders
+    // summoned from the Omarchy bar. A replacement bar (e.g. Better Bar) renders
     // this panel with its own generated theme, and the difference is otherwise
     // glaring — the panel would be the one surface in that bar not matching.
     property color foreground: Color.foreground
@@ -117,10 +119,10 @@ Panel {
         if (root.service && root.service.config)
             return root.service.config;
         var base = {};
-        if (root.serviceState && root.serviceState.config)
-            base = root.serviceState.config;
         if (root.settings && typeof root.settings === "object")
-            base = Object.assign({}, base, root.settings);
+            base = root.settings;
+        if (root.serviceState && root.serviceState.config)
+            base = Object.assign({}, base, root.serviceState.config);
         if (Object.keys(base).length === 0)
             base = Config.defaultConfig();
         if (Object.keys(root._pendingConfig).length > 0) {
@@ -331,26 +333,9 @@ Panel {
             root.service.setConfig(key, value);
             return;
         }
-        // Try the bar shell's updateEntryInline — this only works for the
-        // built-in omarchy.bar because the scoped PluginShellApi resolves the
-        // service and writes to shell.json directly. For replacement bars
-        // (px.bar) the scoped API exists but updateEntryInline silently
-        // returns false because it only accepts the bar widget's own plugin ID.
-        if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function") {
-            var entry = { id: "pix.recast" };
-            var cfg = root.cfg || Config.defaultConfig();
-            for (var k in cfg)
-                if (k !== "id")
-                    entry[k] = cfg[k];
-            entry[key] = value;
-            if (root.bar.shell.updateEntryInline("pix.recast", entry))
-                return;
-        }
         // IPC fallback for replacement bars (px.bar): no service access,
         // so write the config change into the state file via IPC.
-        configIpcProc.running = false;
-        configIpcProc.command = ["omarchy-shell", "px-recast", "config", key, String(value)];
-        configIpcProc.running = true;
+        Quickshell.execDetached(["omarchy-shell", "px-recast", "config", key, String(value)]);
         // Optimistically update local state so the UI responds immediately.
         var next = Object.assign({}, root._pendingConfig);
         next[key] = value;
@@ -358,6 +343,7 @@ Panel {
         var stamps = Object.assign({}, root._pendingAt);
         stamps[key] = Date.now();
         root._pendingAt = stamps;
+        root.cfg = root._computeCfg();
     }
 
     // Stream URL/key are session-only unless "remember" is on, so the key never
@@ -371,14 +357,7 @@ Panel {
             else
                 root.service.setConfig(key, value);
         } else if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function") {
-            var entry = {
-                id: "pix.recast"
-            };
-            for (var k in root.settings)
-                if (k !== "id")
-                    entry[k] = root.settings[k];
-            entry[key] = value;
-            root.bar.shell.updateEntryInline("pix.recast", entry);
+            root.bar.shell.updateEntryInline("pix.recast", { id: "pix.recast", [key]: value });
         }
     }
 
@@ -453,7 +432,7 @@ Panel {
         }
     }
 
-    // Popup is driven by the qs.Ui Panel base: open()/close()/toggle()/opened
+     // Popup is driven by the qs.Ui Panel base: open()/close()/toggle()/opened
     // come from the PanelController, closeForPopoutSwitch() keeps the card
     // visible while the bar hands the popout over to another panel, and
     // KeyboardPanel shows it anchored to the bar button.
@@ -461,10 +440,6 @@ Panel {
         root.controller.show();
         if (root.service && typeof root.service.refreshGpuInfo === "function")
             root.service.refreshGpuInfo();
-    }
-
-    function requestClose() {
-        root.close();
     }
 
     // ---- popup window -------------------------------------------------------
@@ -475,9 +450,10 @@ Panel {
         owner: root.hostWidget || root
         focusTarget: keyCatcher
         open: root.opened
+
         centerOnBar: false
-        contentWidth: panel.fittedContentWidth(Style.space(460))
-        contentHeight: panel.fittedContentHeight(Style.space(440))
+        contentWidth: panel.fittedContentWidth(Style.space(500))
+        contentHeight: panel.fittedContentHeight(contentColumn.implicitHeight, Style.space(560))
 
         PanelKeyCatcher {
             id: keyCatcher
@@ -492,7 +468,7 @@ Panel {
                 || replayBitrateField.field.activeFocus
                 || replaySaveLengthField.field.activeFocus
                 || outputDirField.activeFocus
-            onCloseRequested: root.requestClose()
+            onCloseRequested: root.close()
             onActivateRequested: root.toggleRecording()
             onTextKey: function(t) {
                 if ((t === "s" || t === "S") && root.isReplay)
@@ -2137,11 +2113,6 @@ Panel {
 
     Process {
         id: toggleIpcAction
-        running: false
-    }
-
-    Process {
-        id: configIpcProc
         running: false
     }
 

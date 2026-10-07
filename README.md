@@ -51,6 +51,18 @@ omarchy-shell shell toggle pix.recast   # open the control panel
 omarchy-shell bar layout right add pix.recast   # add the bar indicator
 ```
 
+### Under Better Bar
+
+Better Bar hosts plugin widgets itself rather than summoning them into the
+Omarchy bar window, so both the strip entry and the panel work there unchanged:
+
+- **Left-click** the strip entry to open the bar widget, **right-click** for the
+  settings panel.
+- Settings changes go through the service IPC, so a mode switch takes effect on
+  the click instead of waiting for the next poll.
+- The panel opens as a popup anchored under the bar, and closing it — by Escape,
+  by clicking away, or by closing the bar — closes both.
+
 ## Updating
 
 The plugin does **not** check for or apply updates on its own — there is no
@@ -70,6 +82,11 @@ afterwards.
 omarchy plugin validate .   # manifest + entry point check
 bash tests/smoke.sh         # headless QML load smoke test
 ```
+
+`tests/smoke.sh` also runs `setConfig()` and `_computeCfg()` from `Panel.qml`
+against a stub host, which covers the mode tabs: each change must reach the
+service IPC with the right argument, must not be swallowed by a bar facade that
+cannot write, and must be visible in the panel immediately.
 
 ## Files
 

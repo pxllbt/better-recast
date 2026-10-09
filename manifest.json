@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "pix.recast",
   "name": "Better Recast",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "pxllbt",
   "license": "MIT",
   "description": "GPU-accelerated screen recording with automatic hardware detection",

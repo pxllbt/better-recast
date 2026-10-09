@@ -42,6 +42,18 @@ automatic hardware and encoder detection.
 - `omarchy-capture-region`, `omarchy-notification-send` (bundled with Omarchy)
 - `python3` for the IPC client
 
+### If `gpu-screen-recorder` is missing
+
+The panel checks for the binary at startup and refuses to record when it is
+absent, reporting the install command instead of failing:
+
+```
+gpu-screen-recorder isn't installed — install it with: pacman -S gpu-screen-recorder
+```
+
+Install it and press record again — the check re-runs on the press, so there is
+no need to restart the shell.
+
 ## Install
 
 ```

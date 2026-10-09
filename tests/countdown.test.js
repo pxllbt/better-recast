@@ -108,4 +108,38 @@ assert(!/root\.start\(/.test(t),
 assert(!/_countdownSpent/.test(src),
   "the re-entrant bypass flag must be gone");
 
-console.log("ok - countdown + version probe + update notice");
+// ── a missing gpu-screen-recorder must be reported, not exit code 127 ──────
+// gsr spawn failures used to promote state to "recording" and then die with
+// shell exit code 127, so the only clue was "exited unexpectedly (code 127)".
+assert(/property bool gsrProbeDone/.test(src),
+  "the probe must record that it ran at all");
+assert(/readonly property bool gsrMissing: root\.gsrProbeDone && root\.gsrVersion === ""/.test(src),
+  "gsrMissing must require a completed probe, so a pending check never blocks recording");
+assert(/onExited: root\.gsrProbeDone = true/.test(src),
+  "a missing binary never reaches stdout, so onExited must complete the probe");
+// The probe must run through bash: a bare "gpu-screen-recorder" Process never
+// spawns when the binary is absent, so it emits neither stdout nor onExited and
+// the probe silently never completes (verified -- gsrMissing stayed false).
+assert(/command -v gpu-screen-recorder/.test(src),
+  "the probe must use command -v to detect the binary");
+assert(/__GSR_MISSING__/.test(src),
+  "the probe must emit a sentinel when the binary is absent");
+assert(/text\.indexOf\("__GSR_MISSING__"\) !== -1/.test(src),
+  "the sentinel must be checked before the version regex");
+// Every path that spawns gsr must be guarded: startReplay, start and
+// beginRecording (the countdown timer calls beginRecording directly).
+for (const fn of ["startReplay", "start", "beginRecording"]) {
+  const body = src.slice(src.indexOf(`function ${fn}(`), src.indexOf("function ", src.indexOf(`function ${fn}(`) + 12));
+  assert(/if \(!gsrPresent\(\)\)\s*\n\s*return;/.test(body),
+    `${fn}() must refuse to launch when gsr is missing`);
+}
+assert(/function gsrPresent\(\)/.test(src), "gsrPresent() must exist");
+assert(/pacman -S gpu-screen-recorder/.test(src),
+  "the missing-dependency message must name the install command");
+assert(/if \(!gsrMissing\)\s*\n\s*return true;/.test(
+    src.slice(src.indexOf("function gsrPresent()"), src.indexOf("function start("))),
+  "gsrPresent() must allow the launch when the binary is present or unproven");
+assert(/refreshVersion\(\);\s*\n\s*errorMessage = "gpu-screen-recorder isn/.test(src),
+  "a blocked press must re-probe, so installing gsr fixes the panel without waiting 12h");
+
+console.log("ok - countdown + version probe + update notice + missing-dependency guard");

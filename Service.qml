@@ -27,7 +27,16 @@ Item {
     property bool gpuDetected: false
     property string gsrVersion: ""
     property string gsrLatest: ""
+    property bool gsrProbeDone: false
     readonly property bool gsrUpdateAvailable: !!(root.gsrVersion && root.gsrLatest && root.gsrVersion !== root.gsrLatest)
+    /**
+     * True only once a probe has actually run and found no binary. Before the
+     * first probe completes this stays false on purpose: the plugin must not
+     * block recording on a check that has not reported yet, and gsr is
+     * overwhelmingly present. A missing binary is caught the moment the probe
+     * says so.
+     */
+    readonly property bool gsrMissing: root.gsrProbeDone && root.gsrVersion === ""
     property var monitors: []
     property bool monitorsLoaded: false
     property var audioDevices: []
@@ -148,6 +157,9 @@ Item {
         stdout: StdioCollector {
             waitForEnd: true
             onStreamFinished: {
+                root.gsrProbeDone = true;
+                if (text.indexOf("__GSR_MISSING__") !== -1)
+                    return;
                 // `gpu-screen-recorder --version` prints a bare "6.1.0"; older
                 // builds prefix it with the program name. Accept both.
                 var m = text.match(/gpu-screen-recorder\s*(\d+\.\d+\.\d+)/i);
@@ -155,7 +167,13 @@ Item {
                 if (m) root.gsrVersion = m[1];
             }
         }
-        command: ["gpu-screen-recorder", "--version"]
+        // `command -v` has to run through bash on purpose. Running
+        // "gpu-screen-recorder" directly does not work for this check: when the
+        // binary is absent the Process never spawns, so neither stdout nor
+        // onExited ever fires and the probe silently never completes. Bash
+        // always exists, so this always exits and always reports.
+        onExited: root.gsrProbeDone = true
+        command: ["bash", "-c", "if command -v gpu-screen-recorder >/dev/null 2>&1; then gpu-screen-recorder --version 2>/dev/null; else echo __GSR_MISSING__; fi"]
     }
     Process {
         id: gsrLatestProc
@@ -243,6 +261,8 @@ Item {
 
     function startReplay() {
         if (active || busy || state === "replay")
+            return;
+        if (!gsrPresent())
             return;
         // Never launch a second recorder on top of a live one: `running = true`
         // on an already-running Process emits no runningChanged, so the
@@ -349,10 +369,32 @@ Item {
         flushState();
     }
 
+    /**
+     * Block a launch when the recorder binary is known to be absent.
+     *
+     * Without this the panel lies twice before failing: `starting` is promoted
+     * to `recording` on the spawn attempt, then the process dies with shell exit
+     * code 127 and the user sees "gpu-screen-recorder exited unexpectedly (code
+     * 127)" -- which does not say what is wrong or how to fix it. Returns true
+     * when the launch may proceed.
+     */
+    function gsrPresent() {
+        if (!gsrMissing)
+            return true;
+        // Re-probe on the press: the user may have just installed it, and
+        // without this the panel would stay broken until the next 12h timer.
+        refreshVersion();
+        errorMessage = "gpu-screen-recorder isn't installed — install it with: pacman -S gpu-screen-recorder";
+        state = "error";
+        return false;
+    }
+
     function start(targetType) {
         if (countdownPending)
             return;
         if (active || busy)
+            return;
+        if (!gsrPresent())
             return;
         // See startReplay(): a live gsr would swallow this launch silently and
         // strand state on "starting". Reap it instead.
@@ -388,6 +430,9 @@ Item {
     // cleared the flag before reaching the countdown branch, so every timer tick
     // queued a fresh countdown and it looped 3-2-1 forever without recording.
     function beginRecording(targetType) {
+        // Reached both directly (no countdown) and from the countdown timer.
+        if (!gsrPresent())
+            return;
         var streamMode = config.mode === "stream";
 
         var target = resolveTarget(targetType);
@@ -1049,6 +1094,8 @@ Item {
             countdownPending: root.countdownPending,
             countdownRemaining: root.countdownRemaining,
             gsrVersion: root.gsrVersion,
+            gsrProbeDone: root.gsrProbeDone,
+            gsrMissing: root.gsrMissing,
             gsrLatest: root.gsrLatest,
             gsrUpdateAvailable: root.gsrUpdateAvailable,
             recordingIsStream: root.recordingIsStream,

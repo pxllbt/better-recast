@@ -106,6 +106,13 @@ else
   bad "node is needed to test mode switching"
 fi
 
+echo_title "Pre-roll countdown + version probe"
+if node tests/countdown.test.js; then
+  ok "countdown starts, cancels and mirrors without deadlocking"
+else
+  bad "countdown starts, cancels and mirrors without deadlocking"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

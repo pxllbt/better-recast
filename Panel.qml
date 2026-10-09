@@ -169,6 +169,14 @@ Panel {
     readonly property bool recording: state === "recording" || state === "paused"
     readonly property bool paused: state === "paused"
     readonly property bool busy: state === "starting" || state === "stopping"
+    // Pre-roll countdown, mirrored from the service through state.json so the
+    // replacement bar sees it too (same pattern as the rest of serviceState).
+    readonly property bool countdownPending: root.service
+        ? (root.service.countdownPending === true)
+        : (root.serviceState && root.serviceState.countdownPending === true)
+    readonly property int countdownRemaining: root.service
+        ? Number(root.service.countdownRemaining || 0)
+        : Number((root.serviceState && root.serviceState.countdownRemaining) || 0)
     readonly property bool isStream: root.service && root.service.config
         ? root.service.config.mode === "stream"
         : (root.cfg && root.cfg.mode === "stream")
@@ -567,6 +575,43 @@ Panel {
                         }
                     }
 
+                    // ---- gpu-screen-recorder update notice -------------------------------
+                    Item {
+                        id: gsrUpdateNotice
+                        width: parent.width
+                        height: 24
+                        readonly property var st: root.serviceState
+                        visible: st && st.gsrUpdateAvailable === true
+
+                        RowLayout {
+                            anchors.fill: parent
+                            spacing: Style.space(8)
+                            Text {
+                                text: "gpu-screen-recorder " + (gsrUpdateNotice.st.gsrVersion || "?") + " -> " + (gsrUpdateNotice.st.gsrLatest || "?") + " available"
+                                color: root.urgent
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                font.bold: true
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                            Text {
+                                text: "tap to update"
+                                color: root.accent
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                elide: Text.ElideRight
+                                Layout.preferredWidth: implicitWidth
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Quickshell.execDetached(["omarchy-shell", "px-recast", "updateGsr"])
+                        }
+                    }
+
                     // ---- Primary action button ------------------------------------------
                     Button {
                         width: parent.width
@@ -576,6 +621,8 @@ Panel {
                         fontFamily: root.fontFamily
                         fontSize: Style.font.title
                         text: {
+                            if (root.countdownPending)
+                                return "Starting in " + root.countdownRemaining + "…";
                             if (root.busy)
                                 return root.state === "starting" ? "Starting…" : "Stopping…";
                             if (root.isReplay)
@@ -1243,6 +1290,33 @@ Panel {
                                 fontSize: Style.font.caption
                                 onModified: function (v) {
                                     root.setConfig("fps", v);
+                                }
+                            }
+
+                            Text {
+                                text: "Countdown"
+                                color: root.muted
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                            }
+                            Dropdown {
+                                id: countdownDropdown
+                                label: ""
+                                value: root.cfg.countdown || 0
+                                options: [
+                                    { value: 0, label: "Off" },
+                                    { value: 3, label: "3 sec" },
+                                    { value: 5, label: "5 sec" },
+                                    { value: 10, label: "10 sec" }
+                                ]
+                                foreground: root.foreground
+                                background: root.background
+                                accent: root.accent
+                                fontFamily: root.fontFamily
+                                Layout.fillWidth: true
+                                onChanged: function (v) {
+                                    root.setConfig("countdown", v);
                                 }
                             }
 

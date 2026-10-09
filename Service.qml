@@ -25,6 +25,9 @@ Item {
             backend: "cpu"
         })
     property bool gpuDetected: false
+    property string gsrVersion: ""
+    property string gsrLatest: ""
+    readonly property bool gsrUpdateAvailable: !!(root.gsrVersion && root.gsrLatest && root.gsrVersion !== root.gsrLatest)
     property var monitors: []
     property bool monitorsLoaded: false
     property var audioDevices: []
@@ -65,6 +68,10 @@ Item {
     property string lastTarget: ""      // for panel display / notification
     property string pendingRegion: ""   // set by pickRegion before start
     property string errorMessage: ""
+    // Pre-roll countdown state (see start()).
+    property bool countdownPending: false
+    property var countdownTarget: "auto"
+    property int countdownRemaining: 0
 
     // Driving the starting→replay promotion in gsr.onRunningChanged, and
     // tagging the stop-notification so a closed buffer isn't announced as a
@@ -123,6 +130,63 @@ Item {
         return home ? home + "/Videos" : "/tmp";
     }
 
+    // ── gpu-screen-recorder version check ──
+    function refreshVersion() {
+        gsrVerProc.running = true;
+        gsrLatestProc.running = true;
+    }
+    function updateGsr() {
+        // Promotes gsr through the Omarchy-supported package path. Direct
+        // pacman is blocked by Omarchy's transaction hook, so bypass it
+        // explicitly with OMARCHY_ALLOW_DIRECT_PACMAN=1.
+        gsrUpdateProc.running = false;
+        gsrUpdateProc.command = ["bash", "-c", "pkexec env OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman -Syu --noconfirm gpu-screen-recorder"];
+        gsrUpdateProc.running = true;
+    }
+    Process {
+        id: gsrVerProc
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                // `gpu-screen-recorder --version` prints a bare "6.1.0"; older
+                // builds prefix it with the program name. Accept both.
+                var m = text.match(/gpu-screen-recorder\s*(\d+\.\d+\.\d+)/i);
+                if (!m) m = text.match(/(\d+\.\d+\.\d+)/);
+                if (m) root.gsrVersion = m[1];
+            }
+        }
+        command: ["gpu-screen-recorder", "--version"]
+    }
+    Process {
+        id: gsrLatestProc
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                var m = text.match(/>\s*(\d+\.\d+\.\d+)\s*</);
+                if (!m) m = text.match(/(\d+\.\d+\.\d+)/);
+                if (m) root.gsrLatest = m[1];
+            }
+        }
+        command: ["bash", "-c", "curl -fsSL --max-time 6 https://git.dec05eba.com/gpu-screen-recorder/refs 2>/dev/null | grep -oE '> *[0-9]+\\.[0-9]+\\.[0-9]+ *<' | head -1 || true"]
+    }
+    Process {
+        id: gsrUpdateProc
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                if (text) root.errorMessage = text.trim().split("\n")[0];
+            }
+        }
+    }
+    Timer {
+        id: gsrVersionTimer
+        interval: 12 * 60 * 60 * 1000
+        repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: root.refreshVersion()
+    }
+
     // ── Startup ──
     Component.onCompleted: {
         mkdirs.command = ["bash", "-c", "mkdir -p " + runtimeDir];
@@ -159,6 +223,11 @@ Item {
     }
 
     function toggle() {
+        // A press during the pre-roll countdown means "never mind".
+        if (countdownPending) {
+            cancelCountdown();
+            return;
+        }
         if (state === "replay" && config.mode === "replay") {
             stopReplay();
         } else if (active) {
@@ -272,7 +341,17 @@ Item {
             openPath(path.substring(0, idx));
     }
 
+    // Abort an in-flight pre-roll countdown (stop / pause / a second press).
+    function cancelCountdown() {
+        countdownTimer.running = false;
+        countdownPending = false;
+        countdownRemaining = 0;
+        flushState();
+    }
+
     function start(targetType) {
+        if (countdownPending)
+            return;
         if (active || busy)
             return;
         // See startReplay(): a live gsr would swallow this launch silently and
@@ -285,6 +364,30 @@ Item {
         errorMessage = "";
         applyVolume();
 
+        // Pre-roll countdown. Deliberately does NOT set state to
+        // "starting": that would flip `busy`, and the deferred start()
+        // below would early-return on `if (active || busy)`. Keep the
+        // real target type aside -- lastTarget is a display string, not
+        // something start() can consume.
+        var secs = Math.max(0, parseInt(config.countdown) || 0);
+        if (secs > 0) {
+            countdownPending = true;
+            countdownTarget = targetType;
+            countdownRemaining = secs;
+            sendNotification("Better Recast", "Recording starts in " + secs + "s…");
+            countdownTimer.interval = 1000;
+            countdownTimer.running = true;
+            return;
+        }
+
+        beginRecording(targetType);
+    }
+
+    // The countdown hands off here rather than re-entering start(). A re-entrant
+    // "countdown already ran" flag was tried first and did not work: start()
+    // cleared the flag before reaching the countdown branch, so every timer tick
+    // queued a fresh countdown and it looped 3-2-1 forever without recording.
+    function beginRecording(targetType) {
         var streamMode = config.mode === "stream";
 
         var target = resolveTarget(targetType);
@@ -365,6 +468,13 @@ Item {
     }
 
     function stop() {
+        // A pending pre-roll has no recorder behind it yet, so the guards
+        // below would all fail and the countdown would fire afterwards --
+        // pressing stop during the countdown has to cancel it outright.
+        if (countdownPending) {
+            cancelCountdown();
+            return;
+        }
         // gsr.running matters as much as `active`: a session can outlive our
         // state (e.g. mode switched away from replay while the buffer kept
         // recording). Without this, stop() no-ops and the orphan never dies.
@@ -936,6 +1046,11 @@ Item {
         return JSON.stringify({
             state: st,
             recordingState: st,
+            countdownPending: root.countdownPending,
+            countdownRemaining: root.countdownRemaining,
+            gsrVersion: root.gsrVersion,
+            gsrLatest: root.gsrLatest,
+            gsrUpdateAvailable: root.gsrUpdateAvailable,
             recordingIsStream: root.recordingIsStream,
             recordingElapsed: root.recordingElapsed,
             recordingFile: root.recordingFile,
@@ -978,6 +1093,10 @@ Item {
     }
 
     // State transition bookkeeping
+    // The countdown lives outside the recorder state machine, so its own
+    // change handlers must push state.json for the replacement bar.
+    onCountdownPendingChanged: { flushState() }
+    onCountdownRemainingChanged: { flushState() }
     onStateChanged: {
         if (state === "recording" || state === "replay") {
             recordingBaseSec = recordingElapsed;
@@ -997,6 +1116,24 @@ Item {
     onErrorMessageChanged: { flushState() }
 
     // Elapsed timer (only while recording / replay buffer running)
+    Timer {
+        id: countdownTimer
+        interval: 1000
+        repeat: false
+        running: false
+        onTriggered: {
+            countdownRemaining = countdownRemaining - 1;
+            if (countdownRemaining > 0) {
+                sendNotification("Better Recast", "Recording starts in " + countdownRemaining + "s…");
+                countdownTimer.restart();
+                return;
+            }
+            var t = countdownTarget;
+            root.cancelCountdown();
+            root.beginRecording(t);
+        }
+    }
+
     Timer {
         id: elapsedTimer
         interval: 1000
@@ -1067,6 +1204,11 @@ Item {
 
         function openClip(): string {
             root.openPath(root.lastSavedPath);
+            return "ok";
+        }
+
+        function updateGsr(): string {
+            root.updateGsr();
             return "ok";
         }
 

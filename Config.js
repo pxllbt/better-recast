@@ -17,10 +17,11 @@ function defaultConfig() {
     quality: "auto",          // "auto" | "medium" | "high" | "very_high" | "ultra" | number (kbps for cbr)
     fps: 60,
     resolution: "",           // "" = native, "1920x1080", etc.
-    frameMode: "vfr",         // "cfr" | "vfr" | "content"
+    frameMode: "cfr",         // "cfr" | "vfr" | "content"
     colorRange: "limited",    // "limited" | "full"
     tune: "performance",      // "performance" | "quality"
     keyInterval: 1.0,
+    countdown: 0,            // 0 = off, 3/5/10 seconds
     cursor: true,
 
     // Audio
@@ -293,7 +294,7 @@ function normalize(raw) {
       if (typeof v !== "boolean") v = d[k]
     }
     if (k === "audioCodec" && ["aac", "opus", "flac"].indexOf(v) === -1) v = d[k]
-    if (k === "fps" || k === "keyInterval" || k === "audioBitrate") {
+    if (k === "fps" || k === "keyInterval" || k === "countdown" || k === "audioBitrate") {
       v = Number(v)
       if (isNaN(v) || v < 0) v = d[k]
     }

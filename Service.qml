@@ -28,6 +28,7 @@ Item {
     property string gsrVersion: ""
     property string gsrLatest: ""
     property bool gsrProbeDone: false
+    property string gsrUpdateOutput: ""
     readonly property bool gsrUpdateAvailable: !!(root.gsrVersion && root.gsrLatest && root.gsrVersion !== root.gsrLatest)
     /**
      * True only once a probe has actually run and found no binary. Before the
@@ -144,12 +145,26 @@ Item {
         gsrVerProc.running = true;
         gsrLatestProc.running = true;
     }
+    function notifyUpdate(summary, body) {
+        // Surface update activity as a desktop notification so the user can
+        // actually see progress — previously the whole step was silent.
+        gsrNotifyProc.command = ["notify-send", "-a", "Better Recast", "-u", "normal", summary, body];
+        gsrNotifyProc.running = true;
+    }
     function updateGsr() {
         // Promotes gsr through the Omarchy-supported package path. Direct
         // pacman is blocked by Omarchy's transaction hook, so bypass it
         // explicitly with OMARCHY_ALLOW_DIRECT_PACMAN=1.
+        //
+        // `-S --needed`, never `-Syu`: the user asked to update one
+        // package, not to upgrade the whole system. A bare `-Syu` here
+        // silently pulled in unrelated upgrades (kernel, drivers) every
+        // time the notice was tapped. `--needed` also skips the reinstall
+        // when the installed version already matches, so the notice no
+        // longer "does nothing".
+        notifyUpdate("Updating gpu-screen-recorder", "Fetching the latest build from your package repositories…");
         gsrUpdateProc.running = false;
-        gsrUpdateProc.command = ["bash", "-c", "pkexec env OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman -Syu --noconfirm gpu-screen-recorder"];
+        gsrUpdateProc.command = ["bash", "-c", "pkexec env OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman -S --needed --noconfirm gpu-screen-recorder 2>&1"];
         gsrUpdateProc.running = true;
     }
     Process {
@@ -180,20 +195,46 @@ Item {
         stdout: StdioCollector {
             waitForEnd: true
             onStreamFinished: {
-                var m = text.match(/>\s*(\d+\.\d+\.\d+)\s*</);
-                if (!m) m = text.match(/(\d+\.\d+\.\d+)/);
+                // `pacman -Si` reports the version the package manager
+                // can actually install, e.g. "Version   : 6.1.0-1". Strip
+                // the pkgrel suffix so it compares against the bare
+                // "6.1.0" that `gpu-screen-recorder --version` prints.
+                var m = text.match(/Version\s*:\s*(\d+\.\d+\.\d+)/);
                 if (m) root.gsrLatest = m[1];
             }
         }
-        command: ["bash", "-c", "curl -fsSL --max-time 6 https://git.dec05eba.com/gpu-screen-recorder/refs 2>/dev/null | grep -oE '> *[0-9]+\\.[0-9]+\\.[0-9]+ *<' | head -1 || true"]
+        // The check must compare against the package manager's version,
+        // not the upstream git tag: the update installs through pacman,
+        // so an upstream-only release (e.g. 6.1.3 while Arch carries
+        // 6.1.0) would advertise an update pacman can never deliver —
+        // which is exactly why tapping the notice "did nothing".
+        command: ["bash", "-c", "pacman -Si gpu-screen-recorder 2>/dev/null || true"]
+    }
+    Process {
+        id: gsrNotifyProc
     }
     Process {
         id: gsrUpdateProc
         stdout: StdioCollector {
             waitForEnd: true
             onStreamFinished: {
-                if (text) root.errorMessage = text.trim().split("\n")[0];
+                gsrUpdateOutput = text;
             }
+        }
+        // pacman and pkexec write their diagnostics to stderr, merged in
+        // above via 2>&1. Surface them only when the transaction actually
+        // failed — on success the output is just pacman's progress noise.
+        onExited: function (exitCode, exitStatus) {
+            if (exitCode !== 0) {
+                var lines = (gsrUpdateOutput || "").trim().split("\n");
+                var msg = lines.length ? lines[lines.length - 1] : "update failed";
+                root.errorMessage = "gpu-screen-recorder update failed: " + msg;
+                notifyUpdate("gpu-screen-recorder update failed", msg);
+                return;
+            }
+            notifyUpdate("gpu-screen-recorder updated", "Installed " + (root.gsrVersion || "the latest version") + ".");
+            // Re-probe so the update notice clears once the new build is in place.
+            Qt.callLater(root.refreshVersion);
         }
     }
     Timer {

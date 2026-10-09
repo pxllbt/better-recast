@@ -21,7 +21,7 @@ function defaultConfig() {
     colorRange: "limited",    // "limited" | "full"
     tune: "performance",      // "performance" | "quality"
     keyInterval: 1.0,
-    countdown: 0,            // 0 = off, 3/5/10 seconds
+    countdown: 3,            // 0 = off, 3/5/10 seconds
     cursor: true,
 
     // Audio

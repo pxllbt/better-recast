@@ -50,7 +50,9 @@ assert(/countdownPending: root\.countdownPending/.test(src),
 
 // ── config: countdown default + validation ─────────────────────────────
 const cfg = fs.readFileSync("Config.js", "utf8");
-assert(/countdown:\s*0,/.test(cfg), "countdown defaults to off");
+assert(/countdown:\s*3,/.test(cfg), "countdown defaults to 3s (new installs get the pre-roll)");
+// 0 must stay reachable: it is the documented "record instantly" opt-out.
+assert(/\{ value: 0, label: "Off" \}/.test(panel), "Off must remain an option");
 assert(/k === "countdown"/.test(cfg), "countdown is validated as a number");
 
 // ── panel: dropdown + visible countdown ────────────────────────────────

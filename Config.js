@@ -103,6 +103,12 @@ function resolveProfile(config, gpuInfo) {
   if (resolved.encoder === "auto" || resolved.encoder === "") {
     resolved.encoder = vendor === "unknown" ? "cpu" : "gpu"
   }
+  // The default is "gpu", not "auto", so a machine where gsr reports no GPU
+  // vendor would otherwise keep recording with a GPU encoder and fail. When
+  // nothing was detected there is no GPU to encode on -- force CPU encoding
+  // regardless of what the persisted config says.
+  if (vendor === "unknown")
+    resolved.encoder = "cpu"
   if (resolved.tune === "auto" || resolved.tune === "") {
     resolved.tune = "performance"
   }

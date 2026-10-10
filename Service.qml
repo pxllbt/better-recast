@@ -88,10 +88,6 @@ Item {
     // saved recording.
     property bool _startingReplay: false
     property bool _wasReplay: false
-    // One-shot "recording started" notice, so a launch with the countdown
-    // turned off still gives feedback (the countdown path already announces
-    // "Recording starts in Ns…"). Reset on each new start().
-    property bool _startedNotified: false
     property string _lastSavedPath: ""
     readonly property string lastSavedPath: _lastSavedPath
 
@@ -346,7 +342,6 @@ Item {
         lastTarget = describeTarget(target) + " · replay buffer (" + String(config.replaySeconds || 60) + "s)";
         state = "starting";
         recordingElapsed = 0;
-        _startedNotified = false;
         startWatchdog.restart();
         gsr.command = ["gpu-screen-recorder"].concat(args, ["-o", outputDir, "-ipc", ipcSocketPath]);
         prepareDir.command = ["bash", "-c", "mkdir -p " + outputDir + " && mkdir -p " + runtimeDir];
@@ -520,7 +515,6 @@ Item {
             lastTarget = describeTarget(target) + " · " + config.streamPlatform;
             state = "starting";
             recordingElapsed = 0;
-            _startedNotified = false;
             startWatchdog.restart();
             gsr.command = ["gpu-screen-recorder"].concat(args);
             gsr.environment = {"GSR_AUTH": streamKey};
@@ -544,7 +538,6 @@ Item {
         lastTarget = describeTarget(target);
         state = "starting";
         recordingElapsed = 0;
-        _startedNotified = false;
         startWatchdog.restart();
         gsr.command = args;
         gsr.running = true;
@@ -914,13 +907,8 @@ Item {
         // gsr has no "started" signal; promote starting -> recording as soon as the
         // process is alive. A launch that dies instantly is caught by onExited.
         onRunningChanged: {
-            if (gsr.running && root.state === "starting") {
+            if (gsr.running && root.state === "starting")
                 root.state = root._startingReplay ? "replay" : "recording";
-                if (!root._startedNotified) {
-                    root._startedNotified = true;
-                    root.sendNotification("Better Recast", root.lastTarget + " — recording started", "normal", 0);
-                }
-            }
             root._startingReplay = false;
         }
         onExited: function (exitCode, exitStatus) {
@@ -1068,10 +1056,6 @@ Item {
                 // Alive after the grace period: adopt it. The session is real,
                 // it just didn't announce itself.
                 root.state = root._startingReplay ? "replay" : "recording";
-                if (!root._startedNotified) {
-                    root._startedNotified = true;
-                    root.sendNotification("Better Recast", root.lastTarget + " — recording started", "normal", 0);
-                }
             } else {
                 root.onRecordingFailed("gpu-screen-recorder did not start");
             }

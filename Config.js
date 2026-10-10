@@ -101,7 +101,15 @@ function resolveProfile(config, gpuInfo) {
       : (vendor === "unknown" ? "medium" : "very_high")
   }
   if (resolved.encoder === "auto" || resolved.encoder === "") {
-    resolved.encoder = vendor === "unknown" ? "cpu" : "gpu"
+    // Default to CPU encoding on AMD and on machines where gsr reports no
+    // vendor; everything else defaults to the GPU encoder.
+    //
+    // AMD specifically: the VAAPI hardware encode path wedges this card --
+    // the screen goes black a second or two into a recording and the whole
+    // shell has to be restarted. CPU x264 is slower than VAAPI but it cannot
+    // take the GPU down, which is the trade that matters here. An explicit
+    // encoder:"gpu" in the persisted config still opts into it.
+    resolved.encoder = (vendor === "amd" || vendor === "unknown") ? "cpu" : "gpu"
   }
   // The default is "gpu", not "auto", so a machine where gsr reports no GPU
   // vendor would otherwise keep recording with a GPU encoder and fail. When

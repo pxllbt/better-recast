@@ -85,6 +85,18 @@ function resolveProfile(config, gpuInfo) {
   var vendor = (gpuInfo && gpuInfo.vendor) || "unknown"
   var codecs = (gpuInfo && gpuInfo.codecs) || []
 
+  // AMD: keep the GPU encoder, but trim the load that was wedging VAAPI.
+  // very_high + VBR pushed the encoder hard enough to hang the GPU a second
+  // or two into a recording. high quality with QP rate control is a lighter
+  // encode on the same hardware and is what recordings default to here. This
+  // is set first so the generic resolution below sees concrete values and
+  // leaves them alone.
+  if (vendor === "amd") {
+    if (resolved.quality === "auto" || resolved.quality === "")
+      resolved.quality = "high";
+    if (resolved.bitrateMode === "auto" || resolved.bitrateMode === "")
+      resolved.bitrateMode = "qp";
+  }
   if (resolved.codec === "auto" || resolved.codec === "") {
     if (vendor === "nvidia") resolved.codec = codecs.indexOf("hevc") !== -1 ? "hevc" : "h264"
     else if (vendor === "amd" || vendor === "intel") {
@@ -101,15 +113,7 @@ function resolveProfile(config, gpuInfo) {
       : (vendor === "unknown" ? "medium" : "very_high")
   }
   if (resolved.encoder === "auto" || resolved.encoder === "") {
-    // Default to CPU encoding on AMD and on machines where gsr reports no
-    // vendor; everything else defaults to the GPU encoder.
-    //
-    // AMD specifically: the VAAPI hardware encode path wedges this card --
-    // the screen goes black a second or two into a recording and the whole
-    // shell has to be restarted. CPU x264 is slower than VAAPI but it cannot
-    // take the GPU down, which is the trade that matters here. An explicit
-    // encoder:"gpu" in the persisted config still opts into it.
-    resolved.encoder = (vendor === "amd" || vendor === "unknown") ? "cpu" : "gpu"
+    resolved.encoder = vendor === "unknown" ? "cpu" : "gpu"
   }
   // The default is "gpu", not "auto", so a machine where gsr reports no GPU
   // vendor would otherwise keep recording with a GPU encoder and fail. When

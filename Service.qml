@@ -29,7 +29,25 @@ Item {
     property string gsrLatest: ""
     property bool gsrProbeDone: false
     property string gsrUpdateOutput: ""
-    readonly property bool gsrUpdateAvailable: !!(root.gsrVersion && root.gsrLatest && root.gsrVersion !== root.gsrLatest)
+    readonly property bool gsrUpdateAvailable: !!(root.gsrVersion && root.gsrLatest && root.versionNewer(root.gsrLatest, root.gsrVersion))
+    /**
+     * Compare two dotted version strings numerically (6.1.3 > 6.1.0), not as
+     * strings. A bare `!==` is wrong here: the installed build can be newer
+     * than the Arch repo build (a 6.1.3 built from upstream sitting ahead of
+     * the repo's 6.1.0), and a string comparison would then advertise an
+     * "update" that is actually a downgrade.
+     */
+    function versionNewer(a, b) {
+        var pa = String(a || "").split(".").map(Number);
+        var pb = String(b || "").split(".").map(Number);
+        for (var i = 0; i < Math.max(pa.length, pb.length); i++) {
+            var na = i < pa.length ? (pa[i] || 0) : 0;
+            var nb = i < pb.length ? (pb[i] || 0) : 0;
+            if (na > nb) return true;
+            if (na < nb) return false;
+        }
+        return false;
+    }
     /**
      * True only once a probe has actually run and found no binary. Before the
      * first probe completes this stays false on purpose: the plugin must not

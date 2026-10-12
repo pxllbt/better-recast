@@ -120,6 +120,13 @@ else
   bad "state reads via FileView with a gated cat fallback"
 fi
 
+echo_title "Filename templates"
+if node tests/filename.test.js; then
+  ok "template names substitute safely and validate"
+else
+  bad "template names substitute safely and validate"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

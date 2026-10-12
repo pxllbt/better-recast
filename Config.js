@@ -41,6 +41,7 @@ function defaultConfig() {
 
     // Output
     outputDir: "",            // "" = auto from XDG_VIDEOS_DIR
+    fileNameTemplate: "screenrecording-%Y%m%d_%H%M%S", // tokens: %Y %m %d %H %M %S
 
     // Webcam overlay
     webcamEnabled: false,
@@ -361,6 +362,8 @@ function normalize(raw) {
     if (k === "quality" && typeof v !== "number"
         && ["auto", "medium", "high", "very_high", "ultra"].indexOf(v) === -1) v = d[k]
     if (k === "webcamSize" && ["small", "medium", "large"].indexOf(v) === -1) v = d[k]
+    if (k === "fileNameTemplate" && (typeof v !== "string" || v.length > 128
+        || !(v.indexOf("%H") !== -1 || v.indexOf("%M") !== -1 || v.indexOf("%S") !== -1))) v = d[k]
     if (k === "replayStorage" && ["ram", "disk"].indexOf(v) === -1) v = d[k]
     if (k === "webcamDevice" && typeof v !== "string") v = d[k]
     out[k] = v
@@ -373,4 +376,37 @@ function makeTimestamp() {
   var pad = function(n) { return n < 10 ? "0" + n : String(n) }
   return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
     + "_" + pad(d.getHours()) + "-" + pad(d.getMinutes()) + "-" + pad(d.getSeconds())
+}
+
+// Build a recording file name from a template. Tokens %Y %m %d %H %M %S are
+// expanded from `when` (default now); everything else is literal. A template
+// that expands to nothing, or that carries no time token at all (so every
+// recording in a minute would collide), falls back to the default template.
+function makeFileName(template, when) {
+  // Duck-typed on purpose: this file is also evaluated in a node vm for the
+  // unit tests, where a Date built in the test realm is not `instanceof` the
+  // vm realm's Date.
+  var d = when && typeof when.getFullYear === "function" ? when : new Date()
+  var pad = function(n) { return n < 10 ? "0" + n : String(n) }
+  var tokens = {
+    "%Y": String(d.getFullYear()),
+    "%m": pad(d.getMonth() + 1),
+    "%d": pad(d.getDate()),
+    "%H": pad(d.getHours()),
+    "%M": pad(d.getMinutes()),
+    "%S": pad(d.getSeconds())
+  }
+  var def = defaultConfig().fileNameTemplate
+  var t = typeof template === "string" ? template : ""
+  if (t === "" || t.indexOf("%H") === -1 && t.indexOf("%M") === -1 && t.indexOf("%S") === -1)
+    t = def
+  var out = t
+  for (var k in tokens)
+    out = out.split(k).join(tokens[k])
+  // Filesystem-unsafe characters (plus control chars) never reach the disk.
+  out = out.replace(/[\\/:*?"<>|\x00-\x1f]/g, "")
+  out = out.trim()
+  if (out === "")
+    out = makeTimestamp()
+  return out
 }

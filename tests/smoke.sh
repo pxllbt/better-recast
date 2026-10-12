@@ -113,6 +113,13 @@ else
   bad "countdown starts, cancels and mirrors without deadlocking"
 fi
 
+echo_title "Event-driven state reads"
+if node tests/state-read.test.js; then
+  ok "state reads via FileView with a gated cat fallback"
+else
+  bad "state reads via FileView with a gated cat fallback"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

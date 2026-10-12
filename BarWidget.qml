@@ -168,7 +168,8 @@ BarWidget {
     }
     Component.onCompleted: {
         refresh();
-        pollTimer.start();
+        // pollTimer is bound to `running: service === null`; starting it here
+        // would break the binding, so the binding alone drives it.
     }
 
     Connections {
@@ -284,10 +285,22 @@ BarWidget {
     }
 
     // State file reader — replacement bars can't resolve third-party services,
-    // so the Service.qml writes a JSON snapshot that this widget polls via
-    // a Process (cat). FileView.reload() can silently skip updates in some
-    // environments (inotify misses changes, mtime granularity, etc.), so we
-    // read via Process which always returns the latest content.
+    // so the Service.qml writes a JSON snapshot. The primary channel is an
+    // inotify-backed FileView, so an idle session spawns nothing; the `cat`
+    // Process below stays as a slow fallback for environments whose inotify
+    // misses writes (documented in the original polling implementation), and
+    // only runs when the live service object is unreachable anyway.
+    FileView {
+        id: stateFileView
+        path: root.stateFilePath
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.applyServiceState(stateFileView.text())
+        onFileChanged: root.applyServiceState(stateFileView.text())
+        // On failure text() is empty, so applyServiceState parses to {}.
+        onLoadFailed: root.applyServiceState(stateFileView.text())
+    }
+
     Process {
         id: stateReadProc
         running: false
@@ -300,11 +313,13 @@ BarWidget {
         }
     }
 
-    // Polling timer — reads state.json every 1s.
+    // Fallback polling timer — only when the service object is unreachable
+    // (replacement bars). The built-in bar gets live service signals instead.
     Timer {
         id: pollTimer
-        interval: 1000
+        interval: 5000
         repeat: true
+        running: root.service === null
         onTriggered: {
             if (!stateReadProc.running) {
                 stateReadProc.running = true;

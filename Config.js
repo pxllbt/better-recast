@@ -74,6 +74,17 @@ function defaultConfig() {
   }
 }
 
+// The best hardware codec the detected GPU reports, in preference order. Used to
+// resolve "auto" and as the fallback when a recording reaches the encoder before
+// the profile resolved -- a fresh/auto config must never land on a blind H.264,
+// which is the VAAPI path that aborts Mesa on some AMD parts (the black screen).
+function preferredCodec(gpuInfo) {
+  var codecs = (gpuInfo && gpuInfo.codecs) || []
+  if (codecs.indexOf("av1") !== -1) return "av1"
+  if (codecs.indexOf("hevc") !== -1) return "hevc"
+  return "h264"
+}
+
 function applyGpuProfile(config, gpuInfo) {
   return resolveProfile(config, gpuInfo)
 }
@@ -87,11 +98,8 @@ function resolveProfile(config, gpuInfo) {
 
   if (resolved.codec === "auto" || resolved.codec === "") {
     if (vendor === "nvidia") resolved.codec = codecs.indexOf("hevc") !== -1 ? "hevc" : "h264"
-    else if (vendor === "amd" || vendor === "intel") {
-      if (codecs.indexOf("av1") !== -1) resolved.codec = "av1"
-      else if (codecs.indexOf("hevc") !== -1) resolved.codec = "hevc"
-      else resolved.codec = "h264"
-    } else resolved.codec = "h264"
+    else if (vendor === "amd" || vendor === "intel") resolved.codec = preferredCodec(gpuInfo)
+    else resolved.codec = "h264"
   }
   if (resolved.bitrateMode === "auto" || resolved.bitrateMode === "") {
     resolved.bitrateMode = vendor === "unknown" ? "qp" : "vbr"
@@ -179,8 +187,15 @@ function encodeGsrArgs(config, gpuInfo, target, streamMode, replayMode) {
   }
 
   // Codec: streams stay H.264; recordings keep the hardware-resolved codec.
+  // resolveProfile() has already turned "auto" into a concrete codec, so the
+  // guard only matters if a recording somehow reaches gsr before the profile
+  // resolved. Fall back to what the detected GPU actually reports rather than a
+  // blind H.264 -- H.264 VAAPI is the encode path that aborts Mesa on some AMD
+  // parts (the black screen), so a fresh/auto config must never land on it when
+  // the GPU offers hevc/av1.
   var codec = streamMode ? "h264" : config.codec
-  if (codec === "auto") codec = "h264"
+  if (codec === "auto" || !codec)
+    codec = preferredCodec(gpuInfo)
   args.push("-k", codec)
 
   // Bitrate mode: CBR for streaming and replay (man tip: predictable buffer
@@ -338,6 +353,13 @@ function normalize(raw) {
     if (k === "colorRange" && ["limited", "full"].indexOf(v) === -1) v = d[k]
     if (k === "tune" && ["performance", "quality"].indexOf(v) === -1) v = d[k]
     if (k === "encoder" && ["gpu", "cpu"].indexOf(v) === -1) v = d[k]
+    // Pin the encoder selections to the values the profile resolver (and gsr)
+    // understand. A stale or hand-edited value must fall back to "auto" so the
+    // GPU profile still optimizes it, instead of passing a name gsr rejects.
+    if (k === "codec" && ["auto", "h264", "hevc", "av1", "vp9", "vp8"].indexOf(v) === -1) v = d[k]
+    if (k === "bitrateMode" && ["auto", "qp", "vbr", "cbr"].indexOf(v) === -1) v = d[k]
+    if (k === "quality" && typeof v !== "number"
+        && ["auto", "medium", "high", "very_high", "ultra"].indexOf(v) === -1) v = d[k]
     if (k === "webcamSize" && ["small", "medium", "large"].indexOf(v) === -1) v = d[k]
     if (k === "replayStorage" && ["ram", "disk"].indexOf(v) === -1) v = d[k]
     if (k === "webcamDevice" && typeof v !== "string") v = d[k]

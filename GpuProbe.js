@@ -56,6 +56,24 @@ function parseAudioDevices(text) {
   return devices
 }
 
+// Application audio capture: gpu-screen-recorder lists capturable
+// applications (one name per line) for `-a <sink>|app:<name>` capture. A line
+// that is not a bare name — a combined "a|app:b" source, a banner, anything
+// with a separator — is dropped rather than offered as a bogus source.
+function parseAppAudio(text) {
+  var out = []
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim()
+    if (line === "")
+      continue
+    if (line.indexOf("|") !== -1 || line.indexOf(":") !== -1)
+      continue
+    out.push({ id: "app:" + line, name: line })
+  }
+  return out
+}
+
 function parseV4L2Devices(text) {
   var devices = []
   var lines = String(text || "").split("\n")

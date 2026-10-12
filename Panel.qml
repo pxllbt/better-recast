@@ -163,6 +163,11 @@ Panel {
     readonly property var audioDevices: root.service
         ? (root.service.audioDevices || [])
         : (root.serviceState ? (root.serviceState.audioDevices || []) : [])
+    // Capturable applications, offered after the device monitors in both
+    // selectors. Empty unless gpu-screen-recorder reports any.
+    readonly property var appAudioSources: root.service
+        ? (root.service.appAudioSources || [])
+        : (root.serviceState ? (root.serviceState.appAudioSources || []) : [])
     readonly property string state: root.service
         ? (root.service.recordingState || root.service.state || "idle")
         : (root.serviceState && (root.serviceState.recordingState || root.serviceState.state) || "idle")
@@ -327,6 +332,14 @@ Panel {
             list.push({
                 value: d.id,
                 label: d.name || d.id
+            });
+        }
+        // Applications gsr can capture individually, after the devices.
+        for (var j = 0; j < root.appAudioSources.length; j++) {
+            var a = root.appAudioSources[j];
+            list.push({
+                value: a.id,
+                label: a.name + " (app)"
             });
         }
         return list;

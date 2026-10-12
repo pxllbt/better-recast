@@ -184,6 +184,14 @@ else
   bad "config reads are fresh, not cached"
 fi
 
+
+echo_title "Application audio"
+if node tests/appaudio.test.js; then
+  ok "application audio parses, probes safely and merges into the selectors"
+else
+  bad "application audio parses, probes safely and merges into the selectors"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

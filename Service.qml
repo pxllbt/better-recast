@@ -60,6 +60,10 @@ Item {
     property bool monitorsLoaded: false
     property var audioDevices: []
     property bool audioDevicesLoaded: false
+    // Capturable applications (gpu-screen-recorder --list-application-audio),
+    // offered alongside the device monitors for desktop capture. Empty on
+    // machines where nothing exposes capturable audio.
+    property var appAudioSources: []
     property var webcamDevices: []
     // The newest recordings in the output dir, for the panel's recent list.
     property var recentFiles: []
@@ -407,6 +411,7 @@ Item {
         refreshGpuInfo();
         refreshMonitors();
         refreshAudioDevices();
+        refreshAppAudio();
         refreshWebcamDevices();
         refreshConfig();
         refreshRecent();
@@ -430,6 +435,11 @@ Item {
     function refreshAudioDevices() {
         listAudioProc.command = ["gpu-screen-recorder", "--list-audio-devices"];
         listAudioProc.running = true;
+    }
+
+    function refreshAppAudio() {
+        listAppAudioProc.running = false;
+        listAppAudioProc.running = true;
     }
 
     function refreshWebcamDevices() {
@@ -1148,6 +1158,21 @@ Item {
     }
 
     Process {
+        id: listAppAudioProc
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                root.appAudioSources = GpuProbe.parseAppAudio(text);
+            }
+        }
+        // Through bash on purpose: when gpu-screen-recorder is absent the
+        // Process never spawns and neither stdout nor onExited fires, so the
+        // probe would never complete. `command -v` always exits.
+        command: ["bash", "-c",
+            "if command -v gpu-screen-recorder >/dev/null 2>&1; then gpu-screen-recorder --list-application-audio 2>/dev/null; fi"]
+    }
+
+    Process {
         id: diskProbe
         stdout: StdioCollector {
             waitForEnd: true
@@ -1449,6 +1474,7 @@ Item {
             gpuInfo: root.gpuInfo,
             monitors: root.monitors,
             audioDevices: root.audioDevices,
+            appAudioSources: root.appAudioSources,
             webcamDevices: root.webcamDevices,
             config: cfg,
             configLoaded: root.configLoaded,
@@ -1641,6 +1667,7 @@ Item {
         function refreshGpu(): string {
             root.refreshGpuInfo();
             root.refreshMonitors();
+            root.refreshAppAudio();
             return "ok";
         }
 

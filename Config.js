@@ -150,7 +150,11 @@ function streamOutput(config) {
 // gsr `-a` source names. Explicit devices from `--list-audio-devices` use the
 // documented `device:<name>` form; the defaults pass through bare.
 function audioSourceName(device) {
+  // Application sources are already in gsr's `app:<name>` form (see
+  // GpuProbe.parseAppAudio) and pass through verbatim.
   if (device === "default_output" || device === "default_input")
+    return device
+  if (String(device).indexOf("app:") === 0)
     return device
   return "device:" + device
 }

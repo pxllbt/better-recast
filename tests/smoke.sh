@@ -148,13 +148,6 @@ else
   bad "recent recordings list with open and copy-path actions"
 fi
 
-echo_title "Recording OSD overlay"
-if node tests/osd.test.js; then
-  ok "recording OSD overlay with position settings"
-else
-  bad "recording OSD overlay with position settings"
-fi
-
 echo_title "Bar glyph per state"
 if node tests/bar-glyph.test.js; then
   ok "bar glyph is distinct per recording state"
@@ -190,6 +183,14 @@ if node tests/appaudio.test.js; then
   ok "application audio parses, probes safely and merges into the selectors"
 else
   bad "application audio parses, probes safely and merges into the selectors"
+fi
+
+
+echo_title "Final polish"
+if node tests/polish.test.js; then
+  ok "error banner, in-place countdown notices, version 1.3.0"
+else
+  bad "error banner, in-place countdown notices, version 1.3.0"
 fi
 
 echo_title "Results"

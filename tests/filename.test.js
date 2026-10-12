@@ -68,9 +68,20 @@ assert(/outputSubdir/.test(launch),
   "the recording path can descend into a date subdir");
 const prepLines = svc.split("\n").filter(l => /prepareDir\.command = /.test(l));
 assert(prepLines.every(l => /mkdir -p/.test(l)), "prepareDir always mkdirs");
-// At least one prepareDir command must create the recording file's directory.
-assert(svc.indexOf("fileDir") >= 0 || /mkFileName|makeFileName/.test(prepLines.join(" ")),
+assert(svc.indexOf("fileDir") >= 0,
   "prepareDir covers the recording file's directory");
 assert(prepLines.length >= 2, "stream and recording paths each prepare their own dir");
+
+const panel = fs.readFileSync("Panel.qml", "utf8");
+assert(/PanelSectionHeader \{\s*text: "OUTPUT"/.test(panel),
+  "the panel has an OUTPUT section");
+assert(/setConfig\("minFreeDiskMb"/.test(panel),
+  "the panel edits the min-free-disk setting");
+assert(/setConfig\("fileNameTemplate"/.test(panel),
+  "the panel edits the filename template");
+assert(/setConfig\("organizeByDate"/.test(panel),
+  "the panel toggles date folders");
+// The free-space readout reads the service's freeBytes (service or state file).
+assert(/freeBytes/.test(panel), "the panel surfaces free disk space");
 
 console.log("ok - filename templates substitute safely and validate");

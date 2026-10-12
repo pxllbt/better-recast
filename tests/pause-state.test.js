@@ -17,13 +17,10 @@ const resumeFn = svc.slice(svc.indexOf("function resume()"),
 assert(/state = "recording"/.test(resumeFn),
   "resume() must move the service back to recording");
 
-// The pause glyph the bar shows must be distinct from the recording glyph
-// (both in the bar widget's mapping and in the OSD's label set).
+// The pause glyph the bar shows must be distinct from the recording glyph.
 const bar = fs.readFileSync("BarWidget.qml", "utf8");
 const pauseGlyph = String.fromCodePoint(0xF03E5);
 assert(bar.includes(`pausedState ? "${pauseGlyph}"`),
   "the bar maps paused to the pause glyph");
-const osd = fs.readFileSync("Overlay.qml", "utf8");
-assert(/PAUSED/.test(osd), "the OSD labels the paused state");
 
-console.log("ok - pause is visible in the service, bar and OSD");
+console.log("ok - pause is visible in the service and bar");

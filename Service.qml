@@ -623,7 +623,7 @@ Item {
             countdownPending = true;
             countdownTarget = targetType;
             countdownRemaining = secs;
-            sendNotification("Better Recast", "Recording starts in " + secs + "s…");
+            sendNotification("Better Recast", "Recording starts in " + secs + "s…", "normal", 0, root.recastCountdownId);
             countdownTimer.interval = 1000;
             countdownTimer.running = true;
             return;
@@ -1038,16 +1038,24 @@ Item {
         restoreVolume();
     }
 
-    function sendNotification(summary, body, urgency, timeout) {
+    // One replace id for every countdown notice, so "starts in 3… 2… 1…"
+    // updates one notification instead of stacking three.
+    readonly property int recastCountdownId: 4242
+
+    function sendNotification(summary, body, urgency, timeout, replaceId) {
         var cmd = ["omarchy-notification-send"];
         if (urgency)
             cmd.push("-u", urgency);
         if (timeout)
             cmd.push("-t", String(timeout));
+        // -r replaces an earlier notification with the same id, which is how
+        // the countdown counts down in place.
+        if (replaceId !== undefined && replaceId !== null && replaceId > 0)
+            cmd.push("-r", String(replaceId));
         cmd = cmd.concat([summary, body]);
-        // Anything beyond the four standard args is appended verbatim, which is
+        // Anything beyond the standard args is appended verbatim, which is
         // how a caller attaches `--exec <program> [args...]` as the click action.
-        for (var i = 4; i < arguments.length; i++)
+        for (var i = 5; i < arguments.length; i++)
             cmd.push(arguments[i]);
         notifProc.command = cmd;
         notifProc.running = true;
@@ -1541,7 +1549,7 @@ Item {
         onTriggered: {
             countdownRemaining = countdownRemaining - 1;
             if (countdownRemaining > 0) {
-                sendNotification("Better Recast", "Recording starts in " + countdownRemaining + "s…");
+                sendNotification("Better Recast", "Recording starts in " + countdownRemaining + "s…", "normal", 0, root.recastCountdownId);
                 countdownTimer.restart();
                 return;
             }

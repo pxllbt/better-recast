@@ -743,14 +743,52 @@ Panel {
                         wrapMode: Text.WordWrap
                     }
 
-                    Text {
-                        visible: root.state === "error" && root.errorMessage.length > 0
-                        text: "Error: " + root.errorMessage
-                        color: root.urgent
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.caption
-                        wrapMode: Text.WordWrap
+                    // Persistent error banner — shows for ANY non-empty error,
+                    // not only the error state, so refusals (the disk guard, a
+                    // bad trim range) are visible too. Dismissing clears the
+                    // message locally (and in the service when it is reachable).
+                    Rectangle {
+                        id: errorBanner
+                        visible: root.errorMessage.length > 0
                         width: parent.width
+                        height: errorRow.implicitHeight + Style.space(12)
+                        color: Qt.rgba(root.urgent.r, root.urgent.g, root.urgent.b, 0.16)
+                        radius: Style.cornerRadius
+
+                        Row {
+                            id: errorRow
+                            anchors.fill: parent
+                            anchors.margins: Style.space(6)
+                            spacing: Style.space(6)
+
+                            Text {
+                                text: "Error: " + root.errorMessage
+                                color: root.urgent
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                wrapMode: Text.WordWrap
+                                width: parent.width - dismissIcon.width - parent.spacing
+                            }
+
+                            Text {
+                                id: dismissIcon
+                                text: "✕"
+                                color: root.urgent
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                anchors.top: parent.top
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (root.service && "errorMessage" in root.service)
+                                    root.service.errorMessage = "";
+                                root._localError = "";
+                            }
+                        }
                     }
 
                     PanelSeparator {

@@ -1854,6 +1854,18 @@ Panel {
                                 urgent: root.urgent
                                 fontFamily: root.fontFamily
                             }
+
+                            RecentRecordings {
+                                width: parent.width
+                                service: root.service
+                                serviceState: root.serviceState
+                                foreground: root.foreground
+                                background: root.background
+                                accent: root.accent
+                                muted: root.muted
+                                urgent: root.urgent
+                                fontFamily: root.fontFamily
+                            }
                         }
 
                         // ---- Advanced encoder profile --------------------------------------

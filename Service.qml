@@ -61,6 +61,8 @@ Item {
     property var audioDevices: []
     property bool audioDevicesLoaded: false
     property var webcamDevices: []
+    // The newest recordings in the output dir, for the panel's recent list.
+    property var recentFiles: []
 
     // ── Config (defaults seeded, then shell.json overrides) ──
     property var config: Config.normalize({})
@@ -99,7 +101,6 @@ Item {
     // Deferred launch while the disk-space probe is in flight (see
     // beginRecording / launchRecording).
     property var _pendingTarget: null
-    property bool _pendingStream: false
     property int _freeKb: -1
     // Free space on the output filesystem in bytes (0 until a probe has run).
     readonly property real freeBytes: root._freeKb > 0 ? root._freeKb * 1024 : 0
@@ -270,6 +271,34 @@ Item {
         onTriggered: root.refreshVersion()
     }
 
+    Process {
+        id: recentProc
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                var names = String(text || "").split("\n");
+                var out = [];
+                for (var i = 0; i < names.length; i++) {
+                    var name = names[i].trim();
+                    if (name === "")
+                        continue;
+                    out.push({ name: name, path: outputDir + "/" + name });
+                }
+                root.recentFiles = out;
+                flushState();
+            }
+        }
+        // Quoted on purpose: the output dir is user-chosen and may contain
+        // spaces. Names with newlines cannot occur, so the line split is safe.
+        command: ["bash", "-c", "ls -1t \"" + outputDir + "\" 2>/dev/null | head -6"]
+    }
+
+    // Re-read the output directory for the panel's recent list.
+    function refreshRecent() {
+        recentProc.running = false;
+        recentProc.running = true;
+    }
+
     // ── Startup ──
     Component.onCompleted: {
         mkdirs.command = ["bash", "-c", "mkdir -p " + runtimeDir];
@@ -279,6 +308,7 @@ Item {
         refreshAudioDevices();
         refreshWebcamDevices();
         refreshConfig();
+        refreshRecent();
         Qt.callLater(function() { flushState() });
         Qt.callLater(function() { applyVolume() });
     }
@@ -523,7 +553,6 @@ Item {
         // A pure stream writes nothing to disk, so only a stream that also
         // keeps a local backup (-ro) needs the guard.
         _pendingTarget = target;
-        _pendingStream = streamMode;
         if (streamMode && !config.streamBackupLocal)
             launchRecording(target, streamMode);
         else
@@ -858,7 +887,9 @@ Item {
             sendNotification("Stream ended", "Your live stream has stopped.", "normal", 10000);
         } else if (saved) {
             root._lastSavedPath = saved;
-            sendNotification("Screen recording saved", saved, "normal", 10000);
+            sendNotification("Screen recording saved", saved, "normal", 10000,
+                "--exec", "xdg-open", saved);
+            refreshRecent();
         }
         restoreVolume();
     }
@@ -890,6 +921,10 @@ Item {
         if (timeout)
             cmd.push("-t", String(timeout));
         cmd = cmd.concat([summary, body]);
+        // Anything beyond the four standard args is appended verbatim, which is
+        // how a caller attaches `--exec <program> [args...]` as the click action.
+        for (var i = 4; i < arguments.length; i++)
+            cmd.push(arguments[i]);
         notifProc.command = cmd;
         notifProc.running = true;
     }
@@ -995,8 +1030,10 @@ Item {
                 if (root._pendingTarget === null)
                     return;
                 var target = root._pendingTarget;
-                var streamMode = root._pendingStream;
                 root._pendingTarget = null;
+                // Re-derived from the live config, not the stash: the user can
+                // flip the mode while the countdown or the probe is in flight.
+                var streamMode = config.mode === "stream";
                 if (Config.diskAllows(root._freeKb, config.minFreeDiskMb)) {
                     root.launchRecording(target, streamMode);
                 } else {
@@ -1295,6 +1332,7 @@ Item {
             errorMessage: root.errorMessage,
             freeBytes: root.freeBytes,
             outputDir: root.outputDir,
+            recentFiles: root.recentFiles,
             configFilePath: root.configFilePath,
             stateFilePath: root.stateFilePath,
             barStatePath: root.barStatePath,

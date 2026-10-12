@@ -141,6 +141,13 @@ else
   bad "trim parses times, builds safe argv and is wired end to end"
 fi
 
+echo_title "Recent recordings"
+if node tests/recent.test.js; then
+  ok "recent recordings list with open and copy-path actions"
+else
+  bad "recent recordings list with open and copy-path actions"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

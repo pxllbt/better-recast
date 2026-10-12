@@ -41,8 +41,13 @@ const begin = svc.slice(svc.indexOf("function beginRecording(targetType)"),
                        svc.indexOf("function launchRecording(target, streamMode)"));
 assert(/diskProbe\.running = true/.test(begin),
   "beginRecording arms the disk probe before launching");
-assert(/_pendingTarget/.test(begin) && /_pendingStream/.test(begin),
-  "the launch is deferred through stash properties");
+assert(/_pendingTarget/.test(begin),
+  "the launch is deferred through a stash property");
+// The mode must be re-derived at launch time, not stashed: the user can flip
+// it while the countdown or the disk probe is in flight.
+assert(/var streamMode = config\.mode === "stream"/.test(svc.slice(svc.indexOf("id: diskProbe"), svc.indexOf("Component.onCompleted", svc.indexOf("id: diskProbe")))),
+  "the probe handler re-derives streamMode from the live config");
+assert(!/_pendingStream/.test(svc), "no stashed streamMode (it would go stale)");
 assert(/state = "idle"/.test(svc.slice(svc.indexOf("id: diskProbe"), svc.indexOf("Component.onCompleted", svc.indexOf("id: diskProbe")))),
   "a refused launch resets state to idle — no stuck starting");
 // A pure stream writes no local file, so it must skip the disk probe entirely.

@@ -651,6 +651,11 @@ Item {
             return;
         ipcPause.command = ["python3", ipcScriptPath, ipcSocketPath, "set-paused", "true"];
         ipcPause.running = true;
+        // Flip immediately: the bar glyph, the panel and the OSD all read this
+        // state, and a paused recording that kept rendering as "recording" was
+        // indistinguishable from a live one. gsr accepts the pause
+        // synchronously over the socket, so the optimistic flip is safe.
+        state = "paused";
     }
 
     function resume() {
@@ -658,6 +663,7 @@ Item {
             return;
         ipcResume.command = ["python3", ipcScriptPath, ipcSocketPath, "set-paused", "false"];
         ipcResume.running = true;
+        state = "recording";
     }
 
     function togglePause() {

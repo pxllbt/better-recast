@@ -147,10 +147,20 @@ BarWidget {
             panelLoader.item.closeForPopoutSwitch();
     }
 
-    readonly property string glyphText: replayActive ? "󰻂" : (recording ? (streaming ? "●" : (pausedState ? "󰏥" : "󰻂")) : "󰻂")
+    // One glyph per state so the recorder's state reads at a glance from
+    // across the bar — the resting icon is reserved for idle.
+    readonly property string glyphText: replayActive
+        ? ""                                              // history: rolling buffer
+        : (recording
+            ? (streaming ? "󰐗"                            // broadcast: live
+                : (pausedState ? "󰏥"                       // pause: paused
+                    : "󰑽"))                                // record-circle: recording
+            : "󰻂")                                         // video: idle
+    // Colors reinforce the glyph: armed-but-idle stays dim, every active
+    // state is tinted, and live-streaming is urgent.
     readonly property color glyphColor: replayActive
-        ? (root.bar ? root.bar.barForeground : Color.foreground)
-        : (recording ? (streaming ? Color.urgent : Color.accent) : (root.bar ? root.bar.barForeground : Color.foreground))
+        ? Color.accent
+        : (recording ? (streaming ? Color.urgent : (pausedState ? Color.muted : Color.accent)) : (root.bar ? root.bar.barForeground : Color.foreground))
     readonly property string tooltipBase: replayActive
         ? ("Replay buffer · last " + root.replaySeconds + "s · " + root.formatElapsed(root.elapsed) + "\nLeft-click stop buffer · Right-click panel (S saves)")
         : (recording ? (pausedState ? "Paused" : (streaming ? "Live" : "Recording")) + " · " + formatElapsed(elapsed) + "\nLeft-click to stop · Right-click panel" : (streaming ? "Screen Recorder\nLeft-click to go live · Right-click panel" : "Screen Recorder\nLeft-click to record · Right-click panel"))

@@ -148,6 +148,27 @@ else
   bad "recent recordings list with open and copy-path actions"
 fi
 
+echo_title "Recording OSD overlay"
+if node tests/osd.test.js; then
+  ok "recording OSD overlay with position settings"
+else
+  bad "recording OSD overlay with position settings"
+fi
+
+echo_title "Bar glyph per state"
+if node tests/bar-glyph.test.js; then
+  ok "bar glyph is distinct per recording state"
+else
+  bad "bar glyph is distinct per recording state"
+fi
+
+echo_title "Pause visibility"
+if node tests/pause-state.test.js; then
+  ok "pause is visible in the service, bar and OSD"
+else
+  bad "pause is visible in the service, bar and OSD"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

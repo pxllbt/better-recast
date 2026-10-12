@@ -42,6 +42,7 @@ function defaultConfig() {
     // Output
     outputDir: "",            // "" = auto from XDG_VIDEOS_DIR
     fileNameTemplate: "screenrecording-%Y%m%d_%H%M%S", // tokens: %Y %m %d %H %M %S
+    minFreeDiskMb: 2000,      // refuse to record below this much free space
 
     // Webcam overlay
     webcamEnabled: false,
@@ -364,11 +365,32 @@ function normalize(raw) {
     if (k === "webcamSize" && ["small", "medium", "large"].indexOf(v) === -1) v = d[k]
     if (k === "fileNameTemplate" && (typeof v !== "string" || v.length > 128
         || !(v.indexOf("%H") !== -1 || v.indexOf("%M") !== -1 || v.indexOf("%S") !== -1))) v = d[k]
+    if (k === "minFreeDiskMb") {
+      v = Math.floor(Number(v))
+      if (isNaN(v) || v < 0) v = d[k]
+      if (v > 1000000) v = 1000000
+    }
     if (k === "replayStorage" && ["ram", "disk"].indexOf(v) === -1) v = d[k]
     if (k === "webcamDevice" && typeof v !== "string") v = d[k]
     out[k] = v
   }
   return out
+}
+
+// Disk-space guard. `df -Pk` prints the available-kB column as field 4 of the
+// second line; anything that does not parse returns -1 so the caller can tell
+// "unknown" from "0 bytes free" and never blocks a launch on a failed probe.
+function parseDfAvailKb(text) {
+  var lines = String(text || "").split("\n")
+  if (lines.length < 2) return -1
+  var fields = lines[1].trim().split(/\s+/)
+  var kb = parseInt(fields[3], 10)
+  return isNaN(kb) ? -1 : kb
+}
+
+function diskAllows(freeKb, minFreeDiskMb) {
+  if (freeKb < 0) return true          // probe failed: do not block
+  return freeKb >= minFreeDiskMb * 1024
 }
 
 function makeTimestamp() {

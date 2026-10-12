@@ -127,6 +127,13 @@ else
   bad "template names substitute safely and validate"
 fi
 
+echo_title "Disk-space guard"
+if node tests/guard.test.js; then
+  ok "disk guard refuses below the floor and never blocks on a failed probe"
+else
+  bad "disk guard refuses below the floor and never blocks on a failed probe"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

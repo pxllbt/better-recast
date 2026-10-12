@@ -96,6 +96,11 @@ Item {
     property string lastTarget: ""      // for panel display / notification
     property string pendingRegion: ""   // set by pickRegion before start
     property string errorMessage: ""
+    // Deferred launch while the disk-space probe is in flight (see
+    // beginRecording / launchRecording).
+    property var _pendingTarget: null
+    property bool _pendingStream: false
+    property int _freeKb: -1
     // Pre-roll countdown state (see start()).
     property bool countdownPending: false
     property var countdownTarget: "auto"
@@ -510,6 +515,20 @@ Item {
             return;
         }
 
+        // Disk guard: a full disk mid-recording loses the whole clip, so check
+        // free space before spawning the recorder. The probe is asynchronous,
+        // so the launch is stashed and completed (or refused) by its handler.
+        // A pure stream writes nothing to disk, so only a stream that also
+        // keeps a local backup (-ro) needs the guard.
+        _pendingTarget = target;
+        _pendingStream = streamMode;
+        if (streamMode && !config.streamBackupLocal)
+            launchRecording(target, streamMode);
+        else
+            diskProbe.running = true;
+    }
+
+    function launchRecording(target, streamMode) {
         var args = Config.encodeGsrArgs(config, gpuInfo, target, streamMode);
         recordingIsStream = streamMode;
 
@@ -920,6 +939,31 @@ Item {
     }
 
     Process {
+        id: diskProbe
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                root._freeKb = Config.parseDfAvailKb(text);
+                if (root._pendingTarget === null)
+                    return;
+                var target = root._pendingTarget;
+                var streamMode = root._pendingStream;
+                root._pendingTarget = null;
+                if (Config.diskAllows(root._freeKb, config.minFreeDiskMb)) {
+                    root.launchRecording(target, streamMode);
+                } else {
+                    var need = config.minFreeDiskMb;
+                    var free = root._freeKb > 0 ? Math.floor(root._freeKb / 1024) : 0;
+                    errorMessage = "Not enough free disk space for a recording (need " + need + " MB, " + free + " MB free)";
+                    state = "idle";
+                    sendNotification("Better Recast", errorMessage, "critical", 8000);
+                }
+            }
+        }
+        command: ["bash", "-c", "df -Pk \"" + outputDir + "\""]
+    }
+
+    Process {
         id: gsr
         running: false
         // gsr has no "started" signal; promote starting -> recording as soon as the
@@ -1172,6 +1216,7 @@ Item {
             paused: root.paused,
             busy: root.busy,
             errorMessage: root.errorMessage,
+            freeBytes: root._freeKb > 0 ? root._freeKb * 1024 : 0,
             outputDir: root.outputDir,
             configFilePath: root.configFilePath,
             stateFilePath: root.stateFilePath,

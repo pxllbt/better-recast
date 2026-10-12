@@ -407,6 +407,39 @@ function outputSubdir(config, when) {
   return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
 }
 
+// Trim: accept seconds ("90"), mm:ss ("1:30") or h:mm:ss ("00:01:30").
+// Anything else reports -1 so the caller can refuse instead of trimming wrong.
+function parseTimeSpec(spec) {
+  var s = String(spec === undefined || spec === null ? "" : spec).trim();
+  if (s === "") return -1;
+  var parts = s.split(":");
+  if (parts.length > 3) return -1;
+  var total = 0;
+  for (var i = 0; i < parts.length; i++) {
+    var n = parts[i];
+    if (n === "" || !/^\d+$/.test(n)) return -1;
+    total = total * 60 + parseInt(n, 10);
+  }
+  return total;
+}
+
+// ffmpeg argv for a trim. `-ss` lands before `-i` so the seek is fast (keyframe
+// seek); stream copy is the default because it is near-instant, and `precise`
+// re-encodes for frame-accurate edges. endSec < 0 means "to the end".
+function buildTrimArgs(opts) {
+  var args = ["ffmpeg", "-y", "-ss", String(Math.max(0, opts.startSec))];
+  if (opts.endSec >= 0)
+    args.push("-to", String(opts.endSec));
+  args.push("-i", opts.input);
+  if (opts.precise) {
+    args.push("-c:v", "libx264", "-crf", "18", "-preset", "veryfast", "-c:a", "aac");
+  } else {
+    args.push("-c", "copy");
+  }
+  args.push(opts.output);
+  return args;
+}
+
 function makeTimestamp() {
   var d = new Date()
   var pad = function(n) { return n < 10 ? "0" + n : String(n) }

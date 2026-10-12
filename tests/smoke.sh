@@ -134,6 +134,13 @@ else
   bad "disk guard refuses below the floor and never blocks on a failed probe"
 fi
 
+echo_title "Trim"
+if node tests/trim.test.js; then
+  ok "trim parses times, builds safe argv and is wired end to end"
+else
+  bad "trim parses times, builds safe argv and is wired end to end"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

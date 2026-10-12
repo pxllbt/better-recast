@@ -638,6 +638,51 @@ Item {
             resume();
     }
 
+    // Trim the last saved clip with ffmpeg. start/end are time specs
+    // (seconds or mm:ss); an empty end means "to the end of the file".
+    function trimLastClip(startSpec, endSpec, precise) {
+        var input = _lastSavedPath;
+        if (!input || input.length === 0) {
+            errorMessage = "Nothing to trim yet — record a clip first";
+            state = "error";
+            return "error: nothing to trim";
+        }
+        var startSec = Config.parseTimeSpec(startSpec);
+        if (startSec < 0) {
+            errorMessage = "Trim start is not a valid time (try 1:30 or 90)";
+            state = "error";
+            return "error: bad start";
+        }
+        var endSec = -1;
+        if (String(endSpec || "").trim() !== "") {
+            endSec = Config.parseTimeSpec(endSpec);
+            if (endSec < 0) {
+                errorMessage = "Trim end is not a valid time (try 1:30 or 90)";
+                state = "error";
+                return "error: bad end";
+            }
+            if (endSec <= startSec) {
+                errorMessage = "The trim end must come after its start";
+                state = "error";
+                return "error: bad range";
+            }
+        }
+        var dot = input.lastIndexOf(".");
+        var slash = input.lastIndexOf("/");
+        var base = dot > slash ? input.substring(0, dot) : input;
+        var ext = dot > slash ? input.substring(dot) : ".mp4";
+        var output = base + ".trim" + ext;
+        trimProc.command = Config.buildTrimArgs({
+            input: input,
+            startSec: startSec,
+            endSec: endSec,
+            output: output,
+            precise: precise === true || precise === "true" || precise === "precise"
+        });
+        trimProc.running = true;
+        return "ok";
+    }
+
     function setConfig(key, value) {
         var copy = Object.assign({}, config);
         copy[key] = value;
@@ -997,6 +1042,35 @@ Item {
         id: ipcStop
     }
     Process {
+        id: trimProc
+        // Trimming runs through argv only (no shell string), so paths with
+        // spaces or quotes cannot inject commands.
+        property string _lastTrimOutput: ""
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                trimProc._lastTrimOutput = String(text || "");
+            }
+        }
+        onExited: function (exitCode, exitStatus) {
+            var out = trimProc._lastTrimOutput || "";
+            if (exitCode === 0) {
+                var trimmed = trimProc.command[trimProc.command.length - 1];
+                root._lastSavedPath = trimmed;
+                flushState();
+                notifProc.command = ["omarchy-notification-send", "-u", "normal", "-t", "10000",
+                    "Trimmed clip saved", trimmed,
+                    "--exec", "xdg-open", trimmed];
+                notifProc.running = true;
+            } else {
+                var lines = out.trim().split("\n");
+                var msg = lines.length && lines[lines.length - 1] !== "" ? lines[lines.length - 1] : "ffmpeg exited with code " + exitCode;
+                root.errorMessage = "Trim failed: " + msg;
+                sendNotification("Better Recast", errorMessage, "critical", 8000);
+            }
+        }
+    }
+    Process {
         id: ipcSaveReplay
         stdout: StdioCollector {
             waitForEnd: true
@@ -1353,6 +1427,10 @@ Item {
         function stopReplay(): string {
             root.stopReplay();
             return "ok";
+        }
+
+        function trim(start: string, end: string, precise: string): string {
+            return root.trimLastClip(start, end, precise);
         }
 
         function openClip(): string {

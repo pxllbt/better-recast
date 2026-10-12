@@ -768,6 +768,12 @@ Item {
         // indistinguishable from a live one. gsr accepts the pause
         // synchronously over the socket, so the optimistic flip is safe.
         state = "paused";
+        // Re-anchor the count at the paused value. The elapsed timer derives
+        // from `recordingBaseMs`, so without this the time spent paused is
+        // silently added back on resume and the count over-reports how long the
+        // recording has actually been running.
+        recordingBaseSec = recordingElapsed;
+        recordingBaseMs = Date.now();
     }
 
     function resume() {
@@ -776,6 +782,9 @@ Item {
         ipcResume.command = ["python3", ipcScriptPath, ipcSocketPath, "set-paused", "false"];
         ipcResume.running = true;
         state = "recording";
+        // Anchored at pause, so resuming continues from the frozen value rather
+        // than jumping to the wall-clock time since the take started.
+        recordingBaseMs = Date.now();
     }
 
     function togglePause() {
@@ -1522,11 +1531,22 @@ Item {
     // change handlers must push state.json for the replacement bar.
     onCountdownPendingChanged: { flushState() }
     onCountdownRemainingChanged: { flushState() }
+    // Previous state, so a fresh take can be told apart from a resume.
+    property string _prevState: "idle"
     onStateChanged: {
-        if (state === "recording" || state === "replay") {
-            recordingBaseSec = recordingElapsed;
+        // A take entering capture from a non-capturing state starts at zero.
+        // The base is reset here rather than copied from `recordingElapsed`:
+        // the elapsed timer is triggeredOnStart and runs while recording, so on
+        // this very flip it can recompute `recordingElapsed` from the PREVIOUS
+        // take's base before the anchor would copy it — which made a fresh
+        // recording start at the last one's leftover.
+        // paused -> recording is the same take continuing, so it keeps its base.
+        var wasCapturing = _prevState === "recording" || _prevState === "paused" || _prevState === "replay";
+        if ((state === "recording" || state === "replay") && !wasCapturing) {
+            recordingBaseSec = 0;
             recordingBaseMs = Date.now();
         }
+        _prevState = state;
         flushState();
     }
 

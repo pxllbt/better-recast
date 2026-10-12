@@ -201,6 +201,14 @@ else
   bad "MKV is the default container everywhere"
 fi
 
+
+echo_title "Elapsed anchor"
+if node tests/elapsed-anchor.test.js; then
+  ok "a fresh take counts from 00:00 and a resume keeps counting"
+else
+  bad "a fresh take counts from 00:00 and a resume keeps counting"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

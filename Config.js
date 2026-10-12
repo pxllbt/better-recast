@@ -42,7 +42,8 @@ function defaultConfig() {
     // Output
     outputDir: "",            // "" = auto from XDG_VIDEOS_DIR
     fileNameTemplate: "screenrecording-%Y%m%d_%H%M%S", // tokens: %Y %m %d %H %M %S
-    minFreeDiskMb: 2000,      // refuse to record below this much free space
+    organizeByDate: false,     // write recordings into YYYY-MM-DD subdirectories
+    minFreeDiskMb: 2000,       // refuse to record below this much free space
 
     // Webcam overlay
     webcamEnabled: false,
@@ -370,6 +371,9 @@ function normalize(raw) {
       if (isNaN(v) || v < 0) v = d[k]
       if (v > 1000000) v = 1000000
     }
+    if (k === "organizeByDate") {
+      v = v === true || v === "true" || v === "yes" || v === 1
+    }
     if (k === "replayStorage" && ["ram", "disk"].indexOf(v) === -1) v = d[k]
     if (k === "webcamDevice" && typeof v !== "string") v = d[k]
     out[k] = v
@@ -391,6 +395,16 @@ function parseDfAvailKb(text) {
 function diskAllows(freeKb, minFreeDiskMb) {
   if (freeKb < 0) return true          // probe failed: do not block
   return freeKb >= minFreeDiskMb * 1024
+}
+
+// The YYYY-MM-DD subdirectory organized recordings descend into, or "" when
+// organization is off (files stay in the output root).
+function outputSubdir(config, when) {
+  if (!config || config.organizeByDate !== true)
+    return ""
+  var d = when && typeof when.getFullYear === "function" ? when : new Date()
+  var pad = function(n) { return n < 10 ? "0" + n : String(n) }
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
 }
 
 function makeTimestamp() {

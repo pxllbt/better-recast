@@ -47,4 +47,30 @@ assert.equal(Config.normalize({ fileNameTemplate: "clip-%H%M%S" }).fileNameTempl
 assert.equal(Config.normalize({ fileNameTemplate: "clip" }).fileNameTemplate, d,
   "a template with no time token falls back");
 
+// organizeByDate: a date subdirectory for organized output.
+assert.equal(
+  Config.outputSubdir({ organizeByDate: true }, new Date(2026, 9, 12)),
+  "2026-10-12", "organizeByDate builds a YYYY-MM-DD subdir");
+assert.equal(Config.outputSubdir({ organizeByDate: false }, new Date(2026, 9, 12)), "",
+  "off means the root output dir");
+assert.equal(Config.defaultConfig().organizeByDate, false, "date folders default off");
+assert.equal(Config.normalize({ organizeByDate: "yes" }).organizeByDate, true, "boolean coercion");
+assert.equal(Config.normalize({ organizeByDate: 1 }).organizeByDate, true, "truthy numbers coerce");
+
+// Service wiring: the templated name lands in the (optional) date subdir and
+// prepareDir creates the directory of the actual file, not just outputDir.
+const svc = fs.readFileSync("Service.qml", "utf8");
+const launch = svc.slice(svc.indexOf("function launchRecording(target, streamMode)"));
+const fileLine = launch.split("\n").find(l => /recordingFile = fileDir/.test(l));
+assert(fileLine && /Config\.makeFileName\(config\.fileNameTemplate\)/.test(fileLine),
+  "the recording path is built from the template");
+assert(/outputSubdir/.test(launch),
+  "the recording path can descend into a date subdir");
+const prepLines = svc.split("\n").filter(l => /prepareDir\.command = /.test(l));
+assert(prepLines.every(l => /mkdir -p/.test(l)), "prepareDir always mkdirs");
+// At least one prepareDir command must create the recording file's directory.
+assert(svc.indexOf("fileDir") >= 0 || /mkFileName|makeFileName/.test(prepLines.join(" ")),
+  "prepareDir covers the recording file's directory");
+assert(prepLines.length >= 2, "stream and recording paths each prepare their own dir");
+
 console.log("ok - filename templates substitute safely and validate");

@@ -558,18 +558,19 @@ Item {
             gsr.running = true;
             // Ensure the IPC socket dir (and the output dir when a local copy is
             // requested) exists before the recorder starts.
-            prepareDir.command = ["bash", "-c", "mkdir -p " + outputDir + " && mkdir -p " + runtimeDir];
+            prepareDir.command = ["bash", "-c", "mkdir -p \"" + outputDir + "\" && mkdir -p \"" + runtimeDir + "\""];
             prepareDir.running = true;
             return;
         }
 
         // Try to start; if hardware is missing, surface a friendly error.
-        recordingFile = outputDir + "/screenrecording-" + Config.makeTimestamp() + "." + (config.container || "mp4");
+        var fileDir = outputDir + (Config.outputSubdir(config) ? "/" + Config.outputSubdir(config) : "");
+        recordingFile = fileDir + "/" + Config.makeFileName(config.fileNameTemplate) + "." + (config.container || "mp4");
         args = args.concat(["-o", recordingFile, "-ipc", ipcSocketPath]);
         args.unshift("gpu-screen-recorder");
 
-        // ensure output dir + runtime state
-        prepareDir.command = ["bash", "-c", "mkdir -p " + outputDir + " && mkdir -p " + runtimeDir];
+        // ensure output dir (with the date subdir, when organizing) + runtime state
+        prepareDir.command = ["bash", "-c", "mkdir -p \"" + fileDir + "\" && mkdir -p \"" + runtimeDir + "\""];
         prepareDir.running = true;
 
         lastTarget = describeTarget(target);

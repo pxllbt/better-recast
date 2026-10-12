@@ -63,6 +63,18 @@ Item {
     property var webcamDevices: []
     // The newest recordings in the output dir, for the panel's recent list.
     property var recentFiles: []
+    // Named setting profiles and saved regions. Persisted in the state dir
+    // (NOT shell.json) so `omarchy plugin update` never resets them.
+    property var presets: ({})
+    property var savedRegions: []
+    readonly property string presetsFile: {
+        var stateHome = Quickshell.env("XDG_STATE_HOME");
+        if (!stateHome || stateHome.length === 0) {
+            var home = Quickshell.env("HOME");
+            stateHome = home ? home + "/.local/state" : "/tmp";
+        }
+        return stateHome + "/pix-recast/presets.json";
+    }
 
     // ── Config (defaults seeded, then shell.json overrides) ──
     property var config: Config.normalize({})
@@ -299,6 +311,95 @@ Item {
         recentProc.running = true;
     }
 
+    // ── Presets and saved regions ──
+    // Loaded from the state dir at startup; written atomically on change.
+    function loadPresets() {
+        var raw = presetsFileView.text();
+        if (!raw || raw.length === 0)
+            return;
+        try {
+            var obj = JSON.parse(raw);
+            if (obj && typeof obj === "object") {
+                root.presets = (obj.presets && typeof obj.presets === "object") ? obj.presets : ({});
+                root.savedRegions = Array.isArray(obj.regions) ? obj.regions : [];
+            }
+        } catch (e) {
+            // A corrupt file must not break the service: start empty.
+            root.presets = ({});
+            root.savedRegions = [];
+        }
+    }
+
+    function savePresetsFile() {
+        presetsFileView.setText(JSON.stringify({ presets: root.presets, regions: root.savedRegions }));
+    }
+
+    function savePreset(name, patch) {
+        var n = String(name || "").trim();
+        if (n === "")
+            return "error: name the preset first";
+        var next = Object.assign({}, root.presets);
+        // streamKey/streamUrl are stripped by Config.mergePreset itself.
+        next[n] = Config.mergePreset(config, patch);
+        root.presets = next;
+        savePresetsFile();
+        return "ok";
+    }
+
+    function deletePreset(name) {
+        var next = Object.assign({}, root.presets);
+        delete next[name];
+        root.presets = next;
+        savePresetsFile();
+        return "ok";
+    }
+
+    function applyPreset(name) {
+        var patch = root.presets[String(name || "")];
+        if (!patch)
+            return "error: no such preset";
+        var changes = Config.presetPatch(config, patch);
+        for (var k in changes)
+            setConfig(k, changes[k]);
+        return "ok";
+    }
+
+    function saveRegion(name) {
+        var geom = pendingRegion || config.region || config._lastRegion || "";
+        if (!geom)
+            return "error: pick a region first";
+        var n = String(name || "").trim() || geom;
+        var next = root.savedRegions.filter(function (r) { return r.name !== n; });
+        next.push({ name: n, geometry: geom });
+        root.savedRegions = next;
+        savePresetsFile();
+        return "ok";
+    }
+
+    function applyRegion(name) {
+        var entry = null;
+        for (var i = 0; i < root.savedRegions.length; i++) {
+            if (root.savedRegions[i] && root.savedRegions[i].name === name)
+                entry = root.savedRegions[i];
+        }
+        if (!entry)
+            return "error: no such region";
+        pendingRegion = entry.geometry;
+        setConfig("region", entry.geometry);
+        setConfig("targetMode", "region");
+        return "ok";
+    }
+
+    FileView {
+        id: presetsFileView
+        path: root.presetsFile
+        watchChanges: false
+        atomicWrites: true
+        printErrors: false
+        onLoaded: root.loadPresets()
+        onLoadFailed: root.loadPresets()
+    }
+
     // ── Startup ──
     Component.onCompleted: {
         mkdirs.command = ["bash", "-c", "mkdir -p " + runtimeDir];
@@ -309,6 +410,7 @@ Item {
         refreshWebcamDevices();
         refreshConfig();
         refreshRecent();
+        loadPresets();
         Qt.callLater(function() { flushState() });
         Qt.callLater(function() { applyVolume() });
     }
@@ -790,7 +892,13 @@ Item {
     }
 
     function refreshConfig() {
-        configFileView.reload();
+        // Read through a Process, never the FileView's text cache: on
+        // environments whose inotify misses writes, a cached read re-applies a
+        // stale snapshot and silently reverts the user's settings (observed:
+        // container flipped back to mkv after being set to mp4). `cat` always
+        // returns what is on disk right now.
+        configReadProc.running = false;
+        configReadProc.running = true;
     }
 
     // ── Internals ──
@@ -935,12 +1043,17 @@ Item {
         notifProc.running = true;
     }
 
-    // ── FileView: watch shell.json for external config edits ──
+    // ── FileView: senses shell.json changes; the content comes from a Process ──
+    // The FileView is a change sensor only. Its text cache goes stale when
+    // inotify misses a write (this environment does), and reading that cache
+    // re-applies an old snapshot — silently reverting settings. The fresh read
+    // goes through configReadProc below.
     FileView {
         id: configFileView
         path: root.configFilePath
-        blockAllReads: false
+        blockAllReads: true
         watchChanges: true
+        printErrors: false
         onLoaded: {
             if (root._configWriteInProgress) {
                 configWriteDelay.restart();
@@ -962,20 +1075,27 @@ Item {
             }
             root.refreshConfig();
         }
-
-        function reload() {
-            var text = configFileView.text();
-            if (!text) {
-                var fallback = Config.defaultConfig();
-                root.config = Config.normalize(fallback);
-                root.configLoaded = true;
-                return;
-            }
-            root.parseAppliedConfig(text);
-        }
     }
 
     // ── Processes ──
+
+    // Fresh config reads: `cat` always returns the file's current contents,
+    // so a missed inotify event cannot serve a stale snapshot.
+    Process {
+        id: configReadProc
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                root.configLoaded = true;
+                if (!text || text.trim().length === 0) {
+                    root.config = Config.normalize(Config.defaultConfig());
+                    return;
+                }
+                root.parseAppliedConfig(text);
+            }
+        }
+        command: ["cat", root.configFilePath]
+    }
 
     Process {
         id: gsrInfoProc
@@ -1475,6 +1595,32 @@ Item {
 
         function trim(start: string, end: string, precise: string): string {
             return root.trimLastClip(start, end, precise);
+        }
+
+        function savePreset(name: string, patchJson: string): string {
+            var patch = {};
+            try {
+                patch = JSON.parse(patchJson || "{}");
+            } catch (e) {
+                return "error: patch must be a JSON object";
+            }
+            return root.savePreset(name, patch);
+        }
+
+        function applyPreset(name: string): string {
+            return root.applyPreset(name);
+        }
+
+        function deletePreset(name: string): string {
+            return root.deletePreset(name);
+        }
+
+        function saveRegion(name: string): string {
+            return root.saveRegion(name);
+        }
+
+        function applyRegion(name: string): string {
+            return root.applyRegion(name);
         }
 
         function openClip(): string {

@@ -169,6 +169,21 @@ else
   bad "pause is visible in the service, bar and OSD"
 fi
 
+echo_title "Presets and regions"
+if node tests/presets.test.js; then
+  ok "presets merge safely, regions arm capture, nothing persists the stream key"
+else
+  bad "presets merge safely, regions arm capture, nothing persists the stream key"
+fi
+
+
+echo_title "Config read freshness"
+if node tests/config-read.test.js; then
+  ok "config reads are fresh, not cached"
+else
+  bad "config reads are fresh, not cached"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

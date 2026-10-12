@@ -1672,6 +1672,75 @@ Panel {
                             }
                         }
 
+                        // ---- Recording OSD ------------------------------------------------
+                        Column {
+                            width: parent.width
+                            spacing: Style.space(8)
+
+                            PanelSectionHeader {
+                                text: "RECORDING OSD"
+                                foreground: root.foreground
+                                fontFamily: root.fontFamily
+                            }
+
+                            GridLayout {
+                                width: parent.width
+                                columns: 2
+                                columnSpacing: Style.space(10)
+                                rowSpacing: Style.space(8)
+
+                                Text {
+                                    text: "Show indicator"
+                                    color: root.muted
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.caption
+                                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                                }
+                                ToggleSwitch {
+                                    checked: root.cfg.osdEnabled === true
+                                    foreground: root.foreground
+                                    accent: root.accent
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                                    onToggled: root.setConfig("osdEnabled", !root.cfg.osdEnabled)
+                                }
+
+                                Text {
+                                    text: "Position"
+                                    color: root.muted
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.caption
+                                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                                }
+                                Dropdown {
+                                    label: ""
+                                    value: root.cfg.osdPosition || "top-right"
+                                    options: [
+                                        { value: "top-right", label: "Top right" },
+                                        { value: "top-center", label: "Top center" },
+                                        { value: "bottom-right", label: "Bottom right" }
+                                    ]
+                                    foreground: root.foreground
+                                    background: root.background
+                                    accent: root.accent
+                                    fontFamily: root.fontFamily
+                                    Layout.fillWidth: true
+                                    onChanged: function (v) {
+                                        root.setConfig("osdPosition", v);
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: "A small dot with the elapsed time, shown only while recording, streaming or buffering replay."
+                                color: root.muted
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.bodySmall
+                                wrapMode: Text.WordWrap
+                                width: parent.width
+                            }
+                        }
+
                         // ---- Output naming and safety ---------------------------------------
                         Column {
                             width: parent.width
@@ -1840,6 +1909,18 @@ Panel {
                             PanelSectionHeader {
                                 text: "POST-RECORDING"
                                 foreground: root.foreground
+                                fontFamily: root.fontFamily
+                            }
+
+                            PresetsSection {
+                                width: parent.width
+                                service: root.service
+                                serviceState: root.serviceState
+                                foreground: root.foreground
+                                background: root.background
+                                accent: root.accent
+                                muted: root.muted
+                                urgent: root.urgent
                                 fontFamily: root.fontFamily
                             }
 

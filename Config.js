@@ -70,6 +70,8 @@ function defaultConfig() {
     // UI
     advanced: false,
     showTimer: true,
+    osdEnabled: true,         // floating recording indicator while recording
+    osdPosition: "top-right", // "top-right" | "top-center" | "bottom-right"
 
     // State (non-user, runtime)
     _lastMonitor: "",
@@ -374,6 +376,10 @@ function normalize(raw) {
     if (k === "organizeByDate") {
       v = v === true || v === "true" || v === "yes" || v === 1
     }
+    if (k === "osdEnabled") {
+      v = v === true || v === "true" || v === "yes" || v === 1
+    }
+    if (k === "osdPosition" && ["top-right", "top-center", "bottom-right"].indexOf(v) === -1) v = d[k]
     if (k === "replayStorage" && ["ram", "disk"].indexOf(v) === -1) v = d[k]
     if (k === "webcamDevice" && typeof v !== "string") v = d[k]
     out[k] = v
@@ -438,6 +444,45 @@ function buildTrimArgs(opts) {
   }
   args.push(opts.output);
   return args;
+}
+
+// Presets. A preset is a partial config (only the keys it names are stored),
+// so applying one leaves everything else at the user's current values.
+// Credentials are never part of a preset: streamKey and streamUrl hold the
+// user's live-stream secret and are dropped on merge, and streamRemember is
+// off so nothing re-persists them.
+var PRESET_BLOCKED_KEYS = ["streamKey", "streamUrl", "streamRemember"]
+
+function mergePreset(base, patch) {
+  var merged = normalize(Object.assign({}, base))
+  var raw = patch || {}
+  for (var k in raw) {
+    if (PRESET_BLOCKED_KEYS.indexOf(k) !== -1)
+      continue
+    merged[k] = raw[k]
+  }
+  // Strip credentials from the RESULT too: a preset saved from a live config
+  // carries them in the base, and skipping only the patch's keys is not
+  // enough. streamRemember is forced off so nothing re-persists them.
+  for (var i = 0; i < PRESET_BLOCKED_KEYS.length; i++) {
+    merged[PRESET_BLOCKED_KEYS[i]] = normalize({})[PRESET_BLOCKED_KEYS[i]]
+  }
+  return normalize(merged)
+}
+
+// The subset of config a patch actually changes — this is what the service
+// pushes through setConfig when a preset is applied.
+function presetPatch(base, patch) {
+  var out = {}
+  var merged = mergePreset(base, patch)
+  for (var k in merged) {
+    if (merged[k] !== base[k] || (merged[k] && typeof merged[k] === "object"))
+      out[k] = merged[k]
+  }
+  for (var b in PRESET_BLOCKED_KEYS) {
+    delete out[PRESET_BLOCKED_KEYS[b]]
+  }
+  return out
 }
 
 function makeTimestamp() {

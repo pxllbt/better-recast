@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Ui
 import qs.Commons
+import "."
 import "Config.js" as Config
 
 // pix.recast control panel — the settings popup anchored to the bar widget

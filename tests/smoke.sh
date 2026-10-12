@@ -193,6 +193,14 @@ else
   bad "error banner, in-place countdown notices, version 1.3.0"
 fi
 
+
+echo_title "Container default"
+if node tests/container.test.js; then
+  ok "MKV is the default container everywhere"
+else
+  bad "MKV is the default container everywhere"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

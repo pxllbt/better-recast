@@ -37,7 +37,10 @@ function defaultConfig() {
     audioNoiseGate: false,    // noise gate/suppression via FFmpeg filter
 
     // Container
-    container: "mp4",         // "mp4" | "mkv" | "webm"
+    // Container. MKV is the default because it is crash-safe: its index is
+    // written incrementally, so an interrupted capture stays recoverable,
+    // where MP4's trailing moov atom truncates the whole clip.
+    container: "mkv",          // "mkv" | "mp4" | "webm" | "flv" | "mov"
 
     // Output
     outputDir: "",            // "" = auto from XDG_VIDEOS_DIR
@@ -292,7 +295,7 @@ function encodeGsrArgs(config, gpuInfo, target, streamMode, replayMode) {
     args.push("-replay-storage", config.replayStorage === "disk" ? "disk" : "ram")
     args.push("-restart-replay-on-save", "yes")
     args.push("-df", config.replayOrganize ? "yes" : "no")
-    args.push("-c", config.container || "mp4")
+    args.push("-c", config.container || "mkv")
   }
 
   // Metadata: gsr injects its own for screen recordings by default; strip it

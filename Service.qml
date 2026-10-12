@@ -708,7 +708,7 @@ Item {
 
         // Try to start; if hardware is missing, surface a friendly error.
         var fileDir = outputDir + (Config.outputSubdir(config) ? "/" + Config.outputSubdir(config) : "");
-        recordingFile = fileDir + "/" + Config.makeFileName(config.fileNameTemplate) + "." + (config.container || "mp4");
+        recordingFile = fileDir + "/" + Config.makeFileName(config.fileNameTemplate) + "." + (config.container || "mkv");
         args = args.concat(["-o", recordingFile, "-ipc", ipcSocketPath]);
         args.unshift("gpu-screen-recorder");
 

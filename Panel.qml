@@ -192,6 +192,11 @@ Panel {
     readonly property string lastSavedPath: root.service
         ? (root.service.lastSavedPath || "")
         : (root.serviceState ? (root.serviceState.lastSavedPath || "") : "")
+    // Free disk bytes as last measured by the service's guard probe (0 until a
+    // recording starts, or when the probe has not run).
+    readonly property real freeBytes: root.service
+        ? (root.service.freeBytes || 0)
+        : (root.serviceState ? (root.serviceState.freeBytes || 0) : 0)
 
     function formatElapsed(sec) {
         var h = Math.floor(sec / 3600);
@@ -1664,6 +1669,110 @@ Panel {
                                         browseDirProc.running = true;
                                     }
                                 }
+                            }
+                        }
+
+                        // ---- Output naming and safety ---------------------------------------
+                        Column {
+                            width: parent.width
+                            spacing: Style.space(8)
+
+                            PanelSectionHeader {
+                                text: "OUTPUT"
+                                foreground: root.foreground
+                                fontFamily: root.fontFamily
+                            }
+
+                            GridLayout {
+                                width: parent.width
+                                columns: 2
+                                columnSpacing: Style.space(10)
+                                rowSpacing: Style.space(8)
+
+                                Text {
+                                    text: "Min free disk (MB)"
+                                    color: root.muted
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.caption
+                                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                                }
+                                NumberField {
+                                    id: minFreeField
+                                    value: Number(root.cfg.minFreeDiskMb || 2000)
+                                    from: 0
+                                    to: 1000000
+                                    stepSize: 100
+                                    foreground: root.foreground
+                                    accent: root.accent
+                                    fontFamily: root.fontFamily
+                                    fontSize: Style.font.caption
+                                    onModified: function (v) {
+                                        root.setConfig("minFreeDiskMb", v);
+                                    }
+                                }
+
+                                Text {
+                                    text: "Filename template"
+                                    color: root.muted
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.caption
+                                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                                }
+                                TextField {
+                                    text: root.cfg.fileNameTemplate || ""
+                                    placeholderText: "screenrecording-%Y%m%d_%H%M%S"
+                                    foreground: root.foreground
+                                    accent: root.accent
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.caption
+                                    Layout.fillWidth: true
+                                    onEditingFinished: root.setConfig("fileNameTemplate", text)
+                                }
+
+                                Text {
+                                    text: "Date folders"
+                                    color: root.muted
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.caption
+                                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                                }
+                                ToggleSwitch {
+                                    checked: root.cfg.organizeByDate === true
+                                    foreground: root.foreground
+                                    accent: root.accent
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                                    onToggled: root.setConfig("organizeByDate", !root.cfg.organizeByDate)
+                                }
+                            }
+
+                            Text {
+                                text: {
+                                    var free = root.freeBytes;
+                                    if (free <= 0)
+                                        return "Free disk space is checked when a recording starts.";
+                                    var units = ["B", "KB", "MB", "GB", "TB"];
+                                    var i = 0;
+                                    while (free >= 1024 && i < units.length - 1) {
+                                        free /= 1024;
+                                        i++;
+                                    }
+                                    return "Disk free: " + (i === 0 ? free : free.toFixed(1)) + " " + units[i];
+                                }
+                                color: root.muted
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.bodySmall
+                                wrapMode: Text.WordWrap
+                                width: parent.width
+                            }
+
+                            Text {
+                                text: "Tokens: %Y year · %m month · %d day · %H hour · %M minute · %S second. A template with no time token falls back to the default."
+                                color: root.muted
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.bodySmall
+                                wrapMode: Text.WordWrap
+                                width: parent.width
                             }
                         }
 

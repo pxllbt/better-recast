@@ -101,6 +101,8 @@ Item {
     property var _pendingTarget: null
     property bool _pendingStream: false
     property int _freeKb: -1
+    // Free space on the output filesystem in bytes (0 until a probe has run).
+    readonly property real freeBytes: root._freeKb > 0 ? root._freeKb * 1024 : 0
     // Pre-roll countdown state (see start()).
     property bool countdownPending: false
     property var countdownTarget: "auto"
@@ -1217,7 +1219,7 @@ Item {
             paused: root.paused,
             busy: root.busy,
             errorMessage: root.errorMessage,
-            freeBytes: root._freeKb > 0 ? root._freeKb * 1024 : 0,
+            freeBytes: root.freeBytes,
             outputDir: root.outputDir,
             configFilePath: root.configFilePath,
             stateFilePath: root.stateFilePath,

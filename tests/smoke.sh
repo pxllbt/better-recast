@@ -217,6 +217,14 @@ else
   bad "the published count carries the clock it was measured on"
 fi
 
+
+echo_title "Elapsed consumers"
+if node tests/elapsed-consumers.test.js; then
+  ok "the bar and panel counters are stamped, ticked and monotonic"
+else
+  bad "the bar and panel counters are stamped, ticked and monotonic"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

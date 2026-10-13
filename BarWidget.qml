@@ -46,8 +46,21 @@ BarWidget {
         // Guard against a clock that disagrees with ours in the wrong direction:
         // never extrapolate backwards, only forwards.
         var drift = Math.floor((now - stampedAt) / 1000);
-        return drift > 0 ? base + drift : base;
+        var projected = drift > 0 ? base + drift : base;
+        // Ratchet within a take. applyServiceState already drops snapshots that
+        // arrive out of order, but the projection itself still moves whenever
+        // a fresh or unstamped snapshot lands. Held in an object rather than a
+        // plain property so this binding never depends on what it writes --
+        // reading and writing the same property is a binding loop, and QML
+        // warns about it on every pass.
+        if (!root.recording && !root.pausedState)
+            root._elapsedFloor.v = projected;
+        else if (projected > root._elapsedFloor.v)
+            root._elapsedFloor.v = projected;
+        return root._elapsedFloor.v;
     }
+
+    property var _elapsedFloor: ({ v: 0 })
 
     // Popup is hosted by Panel.qml, which the bar mounts per monitor through
     // this hidden loader. The panel extends qs.Ui Panel, so the bar's popout
@@ -87,6 +100,34 @@ BarWidget {
         return null;
     }
 
+    // The stamp of the newest snapshot accepted so far. `recordingElapsedAtMs` is
+// written with Date.now() on every service state flush, so it only ever moves
+// forward for the lifetime of the shell process -- across take boundaries
+// included -- which makes it a reliable ordering token for the three racing
+// readers below.
+property double _lastStateStamp: 0
+
+    // An out-of-order snapshot must be dropped, not applied.
+    //
+    // Three readers write here concurrently: the FileView (watchChanges, so it
+    // fires on every 1s write), a 1s `cat`, and a 5s poll. A `cat` that started
+    // before a write but finished after it hands back the OLDER snapshot, and
+    // applying it blindly put a stale count on top of a fresh one -- the count
+    // went forward, back, forward again. Ordering by the service's own stamp is
+    // the only tie-break available: the two readers see different bytes, and
+    // whichever carries the smaller stamp is by definition older.
+    //
+    // An unstamped snapshot (empty file, mid-flush truncation, a state file from
+    // a pre-stamp plugin) is always accepted: the count may be stale, but
+    // dropping it would freeze the UI instead of merely stuttering it.
+    function _isStaleSnapshot(parsed) {
+        var stamp = parsed && typeof parsed.recordingElapsedAtMs === "number"
+            ? parsed.recordingElapsedAtMs : 0;
+        if (!(stamp > 0) || !(root._lastStateStamp > 0))
+            return false;
+        return stamp < root._lastStateStamp;
+    }
+
     function applyServiceState(raw) {
         var parsed = {};
         try {
@@ -94,6 +135,11 @@ BarWidget {
         } catch (e) {
             parsed = {};
         }
+        if (_isStaleSnapshot(parsed))
+            return;
+        var stamp = typeof parsed.recordingElapsedAtMs === "number" ? parsed.recordingElapsedAtMs : 0;
+        if (stamp > 0)
+            root._lastStateStamp = stamp;
         root.serviceState = parsed;
         _tryGetService();
         // Push updated state to the Panel so its readonly properties

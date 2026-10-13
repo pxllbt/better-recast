@@ -192,9 +192,53 @@ Panel {
     readonly property bool replayActive: root.service
         ? (root.service.replayActive === true)
         : (root.serviceState ? (root.serviceState.replayActive === true) : false)
-    readonly property int elapsed: root.service
-        ? (root.service.recordingElapsed || 0)
-        : (root.serviceState ? (root.serviceState.recordingElapsed || 0) : 0)
+    // The panel's own tick. Without it this counter could only change when a
+    // snapshot landed, so it sat still between reads and always trailed the
+    // recorder by up to a poll interval -- it was not live counting, it was
+    // counting snapshots. One timer per second makes the projection below
+    // re-evaluate on its own; it runs only while a take is actually up.
+    property int _tick: 0
+    Timer {
+        interval: 1000
+        repeat: true
+        triggeredOnStart: true
+        running: root.recording || root.countdownPending
+        onTriggered: root._tick++
+    }
+
+    // Shared projected count, shaped like the bar widget's: age the service's
+    // value on the stamp it was measured at, then ratchet so the number only
+    // moves forward within a take.
+    readonly property int elapsed: {
+        root._tick
+        var base;
+        var stampedAt;
+        if (root.service) {
+            base = root.service.recordingElapsed || 0;
+            stampedAt = root.service.recordingElapsedAtMs || 0;
+        } else {
+            base = (root.serviceState ? (root.serviceState.recordingElapsed || 0) : 0);
+            stampedAt = (root.serviceState && root.serviceState.recordingElapsedAtMs) || 0;
+        }
+        var projected = base;
+        if (typeof stampedAt === "number" && stampedAt > 0) {
+            var drift = Math.floor((Date.now() - stampedAt) / 1000);
+            if (drift > 0)
+                projected = base + drift;
+        }
+        // Ratchet within a take. Deliberately NOT a plain property: a binding
+        // that both reads and writes a property is a binding loop, and QML
+        // warns "Binding loop detected" and re-evaluates on every pass. The
+        // floor is bookkeeping rather than something the UI binds to, so it is
+        // held in an object whose `v` is mutated without notifying anything --
+        // the binding reads it without depending on it.
+        if (!root.recording)
+            root._elapsedFloor.v = projected;
+        else if (projected > root._elapsedFloor.v)
+            root._elapsedFloor.v = projected;
+        return root._elapsedFloor.v;
+    }
+    property var _elapsedFloor: ({ v: 0 })
     readonly property string lastSavedPath: root.service
         ? (root.service.lastSavedPath || "")
         : (root.serviceState ? (root.serviceState.lastSavedPath || "") : "")
@@ -242,13 +286,10 @@ Panel {
     function stateLabel() {
         if (state === "recording") {
             var kind = root.isStream ? "LIVE" : "REC";
-            var elapsed = root.service ? (root.service.recordingElapsed || 0) : (root.serviceState.recordingElapsed || 0);
-            return kind + " " + formatElapsed(elapsed);
+            return kind + " " + formatElapsed(root.elapsed);
         }
-        if (state === "paused") {
-            var elapsed2 = root.service ? (root.service.recordingElapsed || 0) : (root.serviceState.recordingElapsed || 0);
-            return "PAUSED " + formatElapsed(elapsed2);
-        }
+        if (state === "paused")
+            return "PAUSED " + formatElapsed(root.elapsed);
         if (state === "starting")
             return "STARTING…";
         if (state === "stopping")

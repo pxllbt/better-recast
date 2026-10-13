@@ -49,9 +49,9 @@ BarWidget {
         if ("settings" in target)
             target.settings = root.settings;
         if ("anchorItem" in target)
-            target.anchorItem = root;
+            target.anchorItem = root.hostWidget || root;
         if ("hostWidget" in target)
-            target.hostWidget = root;
+            target.hostWidget = root.hostWidget || root;
         if ("service" in target)
             target.service = root.service;
         if ("serviceState" in target)

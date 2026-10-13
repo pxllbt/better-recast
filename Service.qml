@@ -422,7 +422,9 @@ Item {
 
     // ── Public API (used by BarWidget / Panel) ──
 
-    function refreshGpuInfo() {
+    function refreshGpuInfo(force) {
+        if (!force && root.gpuDetected && root.gpuInfo && root.gpuInfo.vendor)
+            return;
         gsrInfoProc.command = ["gpu-screen-recorder", "--info"];
         gsrInfoProc.running = true;
     }

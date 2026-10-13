@@ -272,6 +272,7 @@ BarWidget {
                 if (root.service && typeof root.service.toggle === "function") {
                     root.service.toggle();
                 } else {
+                    toggleActionProc.running = false;
                     toggleActionProc.command = ["omarchy-shell", "px-recast", "toggle"];
                     toggleActionProc.running = true;
                 }

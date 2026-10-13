@@ -455,9 +455,9 @@ Item {
         }
         if (state === "replay" && config.mode === "replay") {
             stopReplay();
-        } else if (active) {
+        } else if (active || state === "starting") {
             stop();
-        } else if (busy) {
+        } else if (state === "stopping") {
             // ignore
         } else if (config.mode === "replay") {
             startReplay();
@@ -545,6 +545,7 @@ Item {
         state = "stopping";
         stopTimeout.restart();
         if (gsr.running) {
+            ipcStop.running = false;
             ipcStop.command = ["python3", ipcScriptPath, ipcSocketPath, "stop"];
             ipcStop.running = true;
         } else {
@@ -749,6 +750,7 @@ Item {
         state = "stopping";
         stopTimeout.restart();
         if (gsr.running) {
+            ipcStop.running = false;
             ipcStop.command = ["python3", ipcScriptPath, ipcSocketPath, "stop"];
             ipcStop.running = true;
         } else {
@@ -761,6 +763,7 @@ Item {
     function pause() {
         if (state !== "recording")
             return;
+        ipcPause.running = false;
         ipcPause.command = ["python3", ipcScriptPath, ipcSocketPath, "set-paused", "true"];
         ipcPause.running = true;
         // Flip immediately: the bar glyph, the panel and the OSD all read this
@@ -779,6 +782,7 @@ Item {
     function resume() {
         if (state !== "paused")
             return;
+        ipcResume.running = false;
         ipcResume.command = ["python3", ipcScriptPath, ipcSocketPath, "set-paused", "false"];
         ipcResume.running = true;
         state = "recording";

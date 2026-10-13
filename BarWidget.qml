@@ -30,9 +30,24 @@ BarWidget {
     readonly property string stateText: root.service
         ? (root.service.recordingState || "idle")
         : (root.serviceState.recordingState || root.serviceState.state || "idle")
-    readonly property int elapsed: root.service
-        ? (root.service.recordingElapsed || 0)
-        : (root.serviceState.recordingElapsed || 0)
+
+    // The service stamps `recordingElapsedAtMs` at the same moment it computes
+    // `recordingElapsed`, so the file's count can be aged exactly instead of
+    // assumed fresh. Without the stamp the widget re-anchored a read that was
+    // up to a second old, which made the clock jump backwards on some reads.
+    readonly property int elapsed: {
+        if (root.service)
+            return root.service.recordingElapsed || 0;
+        var base = root.serviceState.recordingElapsed || 0;
+        var stampedAt = root.serviceState.recordingElapsedAtMs;
+        if (typeof stampedAt !== "number" || stampedAt <= 0)
+            return base;
+        var now = Date.now();
+        // Guard against a clock that disagrees with ours in the wrong direction:
+        // never extrapolate backwards, only forwards.
+        var drift = Math.floor((now - stampedAt) / 1000);
+        return drift > 0 ? base + drift : base;
+    }
 
     // Popup is hosted by Panel.qml, which the bar mounts per monitor through
     // this hidden loader. The panel extends qs.Ui Panel, so the bar's popout

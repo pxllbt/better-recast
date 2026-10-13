@@ -209,6 +209,14 @@ else
   bad "a fresh take counts from 00:00 and a resume keeps counting"
 fi
 
+
+echo_title "Elapsed stamp"
+if node tests/elapsed-stamp.test.js; then
+  ok "the published count carries the clock it was measured on"
+else
+  bad "the published count carries the clock it was measured on"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

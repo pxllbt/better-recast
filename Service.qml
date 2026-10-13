@@ -111,6 +111,12 @@ Item {
     property int recordingElapsed: 0
     property int recordingBaseSec: 0
     property double recordingBaseMs: 0
+    // The instant `recordingElapsed` was last recomputed. Published next to the
+    // count itself so a consumer reading state.json never has to guess how old
+    // the number is: without it a reader re-anchors a poll-interval-old value
+    // as if it were current, which snapped the bar's timer backwards by a second
+    // on every poll — the "freeze then carry on counting" stutter.
+    property double recordingElapsedAtMs: 0
     property string lastTarget: ""      // for panel display / notification
     property string pendingRegion: ""   // set by pickRegion before start
     property string errorMessage: ""
@@ -510,7 +516,7 @@ Item {
         _startingReplay = true;
         lastTarget = describeTarget(target) + " · replay buffer (" + String(config.replaySeconds || 60) + "s)";
         state = "starting";
-        recordingElapsed = 0;
+        resetElapsed();
         startWatchdog.restart();
         gsr.command = ["gpu-screen-recorder"].concat(args, ["-o", outputDir, "-ipc", ipcSocketPath]);
         prepareDir.command = ["bash", "-c", "mkdir -p " + outputDir + " && mkdir -p " + runtimeDir];
@@ -697,7 +703,7 @@ Item {
             recordingFile = "";
             lastTarget = describeTarget(target) + " · " + config.streamPlatform;
             state = "starting";
-            recordingElapsed = 0;
+            resetElapsed();
             startWatchdog.restart();
             gsr.command = ["gpu-screen-recorder"].concat(args);
             gsr.environment = {"GSR_AUTH": streamKey};
@@ -721,7 +727,7 @@ Item {
 
         lastTarget = describeTarget(target);
         state = "starting";
-        recordingElapsed = 0;
+        resetElapsed();
         startWatchdog.restart();
         gsr.command = args;
         gsr.running = true;
@@ -1490,6 +1496,7 @@ Item {
             gsrUpdateAvailable: root.gsrUpdateAvailable,
             recordingIsStream: root.recordingIsStream,
             recordingElapsed: root.recordingElapsed,
+            recordingElapsedAtMs: root.elapsedAtMsForConsumer(),
             recordingFile: root.recordingFile,
             lastSavedPath: root.lastSavedPath,
             replayActive: root.replayActive,
@@ -1585,6 +1592,30 @@ Item {
         }
     }
 
+    // ---- elapsed bookkeeping ------------------------------------------------
+    // Every write of the count stamps the clock with it. Keeping the pair in one
+    // place is what makes the timestamp trustworthy: assigning `recordingElapsed`
+    // anywhere without also stamping `recordingElapsedAtMs` would publish a
+    // count whose age no reader can recover.
+    function resetElapsed() {
+        recordingElapsed = 0;
+        recordingElapsedAtMs = Date.now();
+    }
+
+    function advanceElapsed() {
+        recordingElapsed = recordingBaseSec + Math.floor((Date.now() - recordingBaseMs) / 1000);
+        recordingElapsedAtMs = Date.now();
+    }
+
+    function elapsedAtMsForConsumer() {
+        // Consumers anchor on this pair. A session that has never been stamped
+        // (idle, or a state.json written by an older version) reads as "now" so
+        // the bar starts from 0 instead of extrapolating from the epoch.
+        if (recordingElapsedAtMs <= 0)
+            return Date.now();
+        return recordingElapsedAtMs;
+    }
+
     Timer {
         id: elapsedTimer
         interval: 1000
@@ -1593,7 +1624,7 @@ Item {
         triggeredOnStart: true
         onTriggered: {
             if (root.state === "recording" || root.state === "replay") {
-                root.recordingElapsed = root.recordingBaseSec + Math.floor((Date.now() - root.recordingBaseMs) / 1000);
+                root.advanceElapsed();
             }
         }
     }

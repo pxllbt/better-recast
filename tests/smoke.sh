@@ -210,6 +210,14 @@ else
 fi
 
 
+echo_title "Truncated state read"
+if node tests/state-truncated.test.js; then
+  ok "a truncated state read keeps the last good state"
+else
+  bad "a truncated state read keeps the last good state"
+fi
+
+
 echo_title "Elapsed stamp"
 if node tests/elapsed-stamp.test.js; then
   ok "the published count carries the clock it was measured on"

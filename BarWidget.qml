@@ -129,11 +129,21 @@ property double _lastStateStamp: 0
     }
 
     function applyServiceState(raw) {
+        // An empty read is not a state change. The service writes state.json with
+        // atomicWrites:false so inotify sees it, which means the file is briefly
+        // truncated while it is rewritten. Parsing that window as `{}` blanked
+        // the chip -- the REC face vanished for a frame, and anything gated on
+        // the idle state took its place, which reads as the pill doubling.
+        // Keep the last good state; a real session end writes a real `idle`.
+        var text = String(raw || "").trim();
+        if (text.length === 0)
+            return;
         var parsed = {};
         try {
-            parsed = JSON.parse(String(raw || "").trim() || "{}");
+            parsed = JSON.parse(text);
         } catch (e) {
-            parsed = {};
+            // Truncated mid-write. Same reasoning: keep what we already have.
+            return;
         }
         if (_isStaleSnapshot(parsed))
             return;

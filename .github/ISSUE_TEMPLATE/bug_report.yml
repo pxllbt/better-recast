@@ -1,18 +1,18 @@
-name: "🐛 Bug Report"
-description: "File a bug report to help improve Better Recast"
+name: "Bug Report"
+description: "Report a Better Recast issue"
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report an issue! Please check existing issues before submitting.
+        Thanks for flagging something. Check existing issues first if you can.
 
   - type: textarea
     id: description
     attributes:
-      label: Description
-      description: A clear and concise description of what the bug is.
+      label: What's wrong
+      description: Describe the bug.
       placeholder: "When starting a recording, ..."
     validations:
       required: true
@@ -20,8 +20,8 @@ body:
   - type: textarea
     id: reproduction
     attributes:
-      label: Steps to Reproduce
-      description: Steps to reproduce the behavior.
+      label: Steps to reproduce
+      description: How do you trigger it?
       placeholder: |
         1. Click record button
         2. Wait for countdown
@@ -32,29 +32,29 @@ body:
   - type: textarea
     id: expected
     attributes:
-      label: Expected Behavior
-      description: What did you expect to happen instead?
+      label: What you expected
+      description: What should have happened instead?
     validations:
       required: true
 
   - type: dropdown
     id: gpu_vendor
     attributes:
-      label: GPU Hardware
+      label: GPU
       description: Which GPU vendor is this running on?
       options:
         - "AMD (VAAPI)"
         - "NVIDIA (NVENC)"
-        - "Intel (QuickSync / VAAPI)"
-        - "CPU Software Fallback"
+        - "Intel (QuickSync)"
+        - "CPU fallback"
     validations:
       required: true
 
   - type: textarea
     id: system_info
     attributes:
-      label: System Information
-      description: Output of `gpu-screen-recorder --info`, `hyprctl version`, and Linux distribution.
+      label: System info
+      description: Output of `gpu-screen-recorder --info`, `hyprctl version`, and distro.
       render: shell
       placeholder: |
         GSR: 6.1.0
@@ -66,6 +66,6 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Relevant Logs
-      description: Output from `recast status` or system journal logs.
+      label: Logs
+      description: Output from `recast status` or system journal.
       render: shell

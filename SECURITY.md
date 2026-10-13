@@ -1,26 +1,21 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.3.x   | :white_check_mark: |
-| < 1.3   | :x:                |
+| Version | Status |
+| --- | --- |
+| 1.3.x   | Current, receiving updates |
 
-## Security Model
+## Keeping your recordings safe
 
-Better Recast executes hardware capture commands via `gpu-screen-recorder` and performs system audio routing via `wpctl`. To maintain strict system security:
+Better Recast runs `gpu-screen-recorder` and uses `wpctl` for audio routing. Here's what the security model looks like:
 
-1. **Credentials Isolation**: Stream keys for RTMP broadcasts are held strictly in memory during the session and passed to GSR via the `GSR_AUTH` environment variable. They are **never** written to command-line arguments (preventing visibility in `/proc/<pid>/cmdline`), and are never persisted to disk unless explicitly opted into.
-2. **Path Sanitization**: Custom output directories, filenames, and trim tool parameters are properly escaped and passed via structured argv arrays, avoiding arbitrary shell command injection.
-3. **IPC Scoping**: Unix socket communications use user-scoped runtime directories (`$XDG_RUNTIME_DIR/px-gsr/`).
+- **Stream keys stay in memory.** RTMP keys go through the `GSR_AUTH` env var, never appear in `/proc/<pid>/cmdline`, and aren't persisted to disk unless you explicitly opt in.
+- **No shell injection.** Filenames, output dirs, and trim parameters go through structured argv arrays, not raw shell strings.
+- **Scoped IPC.** Unix socket communications live in `$XDG_RUNTIME_DIR/px-gsr/`.
 
-## Reporting a Vulnerability
+## Reporting
 
-If you discover a security vulnerability in Better Recast, please report it responsibly:
+Don't open a public issue for anything security-sensitive. [Open a private advisory](https://github.com/pxllbt/better-recast/security/advisories/new) or message me on GitHub — include repro steps and relevant logs.
 
-1. **Do not open a public issue.**
-2. Send an email to the repository maintainer via their GitHub profile or open a private advisory at [GitHub Security Advisories](https://github.com/pxllbt/better-recast/security/advisories/new).
-3. Include detailed steps to reproduce the issue and any relevant system logs.
-
-We appreciate your efforts in keeping Better Recast secure for all users.
+Thanks for keeping users safe.

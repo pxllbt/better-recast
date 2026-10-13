@@ -32,6 +32,14 @@ function defaultConfig() {
     audioBitrate: 0,          // 0 = auto
     audioVolume: 100,         // 0-100, desktop audio volume
     audioMicVolume: 100,      // 0-100, microphone volume
+    // Whether the plugin may drive the SYSTEM volume at all.
+    //
+    // Default off, and the default has to stay off: driving the sink and source
+    // means muting and unmuting the user's output and microphone for the length
+    // of every recording. gsr captures the stream either way, so the levels it
+    // records are not affected by what the sink happens to be set to -- changing
+    // it bought nothing and cost the user their own volume.
+    audioSetVolume: false,
     audioDesktopDevice: "default_output",
     audioMicDevice: "default_input",
     audioNoiseGate: false,    // noise gate/suppression via FFmpeg filter

@@ -142,8 +142,12 @@ Item {
     // Saved volumes so we can restore the user's listening level
     // when recording stops. applyVolume() saves via volReadProc before
     // overriding; restoreVolume() restores them on stop/fail.
-    property var _savedAudioSinkVolume: 1.0
-    property var _savedAudioSourceVolume: 0.0
+    // -1 means "never read", so a restore that fires before the read lands
+    // writes nothing instead of writing a guess over the user's level.
+    property var _savedAudioSinkVolume: -1
+    property var _savedAudioSourceVolume: -1
+    // True only while this service is actually driving the system volume.
+    property bool _volumeManaged: false
 
     readonly property bool active: state === "recording" || state === "paused"
     readonly property bool paused: state === "paused"
@@ -870,17 +874,38 @@ Item {
     // Update config in memory only — never persist. Used for session-scoped
     // stream credentials while `streamRemember` is off.
     function applyVolume() {
+        // Never touch the system sink or source unless the user opted in.
+        //
+        // This used to run unconditionally and set @DEFAULT_AUDIO_SINK@ to
+        // audioVolume (100 by default) the moment a recording started, so
+        // music jumped to full volume for the length of every take and dropped
+        // back afterwards -- and a take that ended before the async read landed
+        // restored the seeded 1.0 instead of the user's real level, losing it.
+        // gsr captures the stream regardless of the sink level, so nothing about
+        // the recording depends on this.
+        if (!config.audioSetVolume) {
+            _volumeManaged = false;
+            return;
+        }
         if (!config.audioEnabled) {
+            _volumeManaged = true;
             setWpctlVolume("DEFAULT_AUDIO_SINK", 0);
             setWpctlVolume("DEFAULT_AUDIO_SOURCE", 0);
             return;
         }
         // Read both volumes first, then override. Reading must complete
         // before setting so restoreVolume() has the correct old levels.
-        _savedAudioSinkVolume = 1.0;
-        _savedAudioSourceVolume = 0.0;
+        //
+        // The saved levels start at "unset" rather than at a plausible-looking
+        // 1.0/0.0. A short recording can stop before the read lands, and a
+        // seeded default would then be written back over the user's real
+        // volume on restore -- the setting is destroyed, not merely overridden.
+        _savedAudioSinkVolume = -1;
+        _savedAudioSourceVolume = -1;
+        _volumeManaged = true;
         volReadProc.command = ["bash", "-c",
-            "wpctl get-volume @DEFAULT_AUDIO_SINK@ @DEFAULT_AUDIO_SOURCE@ 2>/dev/null | awk '{print $2, $4}'"
+            "wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '{print $2}'; " +
+            "wpctl get-volume @DEFAULT_AUDIO_SOURCE@ 2>/dev/null | awk '{print $2}'"
         ];
         volReadProc.running = true;
     }
@@ -891,8 +916,18 @@ Item {
     }
 
     function restoreVolume() {
-        setWpctlVolume("DEFAULT_AUDIO_SINK", _savedAudioSinkVolume * 100);
-        setWpctlVolume("DEFAULT_AUDIO_SOURCE", _savedAudioSourceVolume * 100);
+        // Only restore what was actually read. A negative save means the read
+        // never completed, and writing a guess back would destroy the level the
+        // user had.
+        if (!_volumeManaged)
+            return;
+        if (_savedAudioSinkVolume >= 0)
+            setWpctlVolume("DEFAULT_AUDIO_SINK", _savedAudioSinkVolume * 100);
+        if (_savedAudioSourceVolume >= 0)
+            setWpctlVolume("DEFAULT_AUDIO_SOURCE", _savedAudioSourceVolume * 100);
+        _volumeManaged = false;
+        _savedAudioSinkVolume = -1;
+        _savedAudioSourceVolume = -1;
     }
 
     function setSessionConfig(key, value) {
@@ -1373,12 +1408,25 @@ Item {
         stdout: StdioCollector {
             waitForEnd: true
             onStreamFinished: {
-                var out = String(text || "").trim()
-                var parts = out.split(/\s+/)
-                var sink = parseFloat(parts[0])
-                var source = parseFloat(parts[1])
+                // One line per node. `wpctl get-volume @A@ @B@` prints only the
+                // FIRST node, so the old single `awk '{print $2, $4}'` read an
+                // empty $4 for the source: the saved mic level stayed 0.0 and
+                // every restoreVolume() then set the microphone to 0%.
+                var lines = String(text || "").trim().split(/\n+/)
+                var sink = parseFloat(lines[0])
+                var source = parseFloat(lines.length > 1 ? lines[1] : "")
                 if (!isNaN(sink)) root._savedAudioSinkVolume = sink
                 if (!isNaN(source)) root._savedAudioSourceVolume = source
+                // Guarded here as well as in applyVolume(). applyVolume only
+                // starts this read when the opt-in is on, so today the branch
+                // is unreachable -- but a handler that writes the system volume
+                // with no local check is one refactor away from doing it without
+                // consent, and the whole point of the flag is that the write
+                // path is closed by default.
+                if (!config.audioSetVolume) {
+                    root._volumeManaged = false
+                    return
+                }
                 if (config.audioDesktop)
                     setWpctlVolume("DEFAULT_AUDIO_SINK", config.audioVolume || 100)
                 else

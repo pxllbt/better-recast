@@ -218,6 +218,14 @@ else
 fi
 
 
+echo_title "Audio volume consent"
+if node tests/audio-volume-hijack.test.js; then
+  ok "the plugin never drives the system volume unless opted in"
+else
+  bad "the plugin never drives the system volume unless opted in"
+fi
+
+
 echo_title "Elapsed consumers"
 if node tests/elapsed-consumers.test.js; then
   ok "the bar and panel counters are stamped, ticked and monotonic"

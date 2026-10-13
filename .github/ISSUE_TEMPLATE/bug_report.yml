@@ -1,0 +1,71 @@
+name: "🐛 Bug Report"
+description: "File a bug report to help improve Better Recast"
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please check existing issues before submitting.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+      placeholder: "When starting a recording, ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Click record button
+        2. Wait for countdown
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: gpu_vendor
+    attributes:
+      label: GPU Hardware
+      description: Which GPU vendor is this running on?
+      options:
+        - "AMD (VAAPI)"
+        - "NVIDIA (NVENC)"
+        - "Intel (QuickSync / VAAPI)"
+        - "CPU Software Fallback"
+    validations:
+      required: true
+
+  - type: textarea
+    id: system_info
+    attributes:
+      label: System Information
+      description: Output of `gpu-screen-recorder --info`, `hyprctl version`, and Linux distribution.
+      render: shell
+      placeholder: |
+        GSR: 6.1.0
+        Hyprland: 0.44.0
+        Distro: Arch Linux
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Output from `recast status` or system journal logs.
+      render: shell

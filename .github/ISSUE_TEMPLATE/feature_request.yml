@@ -1,0 +1,40 @@
+name: "✨ Feature Request"
+description: "Suggest an idea or enhancement for Better Recast"
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make Better Recast even better? We love community feedback!
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Motivation
+      description: Is your feature request related to a problem or limitation?
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see.
+      placeholder: "Add support for..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or features you've considered.
+
+  - type: textarea
+    id: performance_impact
+    attributes:
+      label: Performance Impact
+      description: Better Recast strictly prioritizes near-zero overhead. Will this feature impact recording latency or idle CPU?
+      placeholder: "Near-zero overhead — uses hardware acceleration and asynchronous IPC."

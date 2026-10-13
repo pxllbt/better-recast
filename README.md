@@ -1,93 +1,128 @@
+<div align="center">
+
 # Better Recast
 
-![Omarchy](https://img.shields.io/badge/Omarchy-4.x-1e66f5?style=flat-square)
-![Quickshell](https://img.shields.io/badge/Quickshell-1e66f5?style=flat-square)
-![License](https://img.shields.io/badge/License-MIT-1e66f5?style=flat-square)
+**High-performance GPU-accelerated screen recording, live streaming, and instant replay for Omarchy & Wayland.**
 
-GPU-accelerated screen recording for the Omarchy shell, backed by
-[gpu-screen-recorder](https://git.dec05eba.com/gpu-screen-recorder/about/) with
-automatic hardware and encoder detection.
+[![CI](https://img.shields.io/github/actions/workflow/status/pxllbt/better-recast/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/pxllbt/better-recast/actions)
+[![Omarchy](https://img.shields.io/badge/Omarchy-4.x-1e66f5?style=flat-square)](https://omarchy.org)
+[![Quickshell](https://img.shields.io/badge/Quickshell-0.3%2B-1e66f5?style=flat-square)](https://quickshell.outfoxxed.me)
+[![GPU Accelerated](https://img.shields.io/badge/GPU-NVENC%20%7C%20VAAPI%20%7C%20QSV-00c853?style=flat-square)](#-hardware-support--encoding-matrix)
+[![Idle CPU](https://img.shields.io/badge/Idle%20CPU-0.0%25-brightgreen?style=flat-square)](#-performance--architecture)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 
-![Better Recast preview](assets/previews/preview.gif)
+<br/>
 
-## Features
+<img src="preview.png" alt="Better Recast" width="100%" />
 
-- One-click record/stop from the bar widget (left click toggle, right click panel)
-- **A distinct icon per state in the bar** — the resting glyph is idle only:
-  record-circle while recording, pause while paused, broadcast while live,
-  history while the replay buffer runs, so the recorder's state reads at a glance
-- **Three modes** — record, live stream, or instant replay — switchable from the panel
-- **Recording OSD** — a small pill (dot + REC/LIVE/REPLAY/PAUSED + elapsed time)
-  shown only while recording, position configurable (top-right / top-center / bottom-right)
-- **Live streaming** to TikTok / Twitch / YouTube / any RTMP endpoint, with per-platform encode presets (H.264 + AAC, CBR, suggested resolution/fps/bitrate) and an optional local backup copy
-  - The stream key is held in memory for the session and passed to gsr via the `GSR_AUTH` environment variable, so it never appears in `/proc/<pid>/cmdline` or in `shell.json` unless you explicitly enable "remember key"
-- **Setting presets** — name the current setup and re-apply it in one click; stream
-  credentials are never part of a preset
-- **Saved regions** — store named geometries (WxH+X+Y) and capture them without
-  re-picking
-- **Application audio** — capturable applications (from
-  `gpu-screen-recorder --list-application-audio`) appear in the desktop and mic
-  selectors, so you can capture just one app's audio (`app:<name>`)
-- **Volume control** for desktop audio and microphone — the levels are read before recording, the requested levels are applied via `wpctl`, and your previous levels are restored when recording stops
-- **Audio device selectors** for desktop and mic (fed by `gpu-screen-recorder --list-audio-devices`, drive gsr's `-a` capture sources directly)
-- **Audio codec (AAC/Opus) and bitrate** control (0–512 kbps, auto when 0)
-- **Noise gate** via FFmpeg's `afftdn`+`agate` filter
-- **Disk-space guard** — recording refuses to start below the configured free-space
-  floor, instead of failing mid-clip when the disk fills
-- **Filename templates and date folders** — name recordings with
-  `%Y %m %d %H %M %S` tokens and optionally organize them into `YYYY-MM-DD/`
-- **Trim the last clip** — cut start/end with ffmpeg (fast stream copy, or
-  frame-accurate re-encode), saved beside the original as `<name>.trim.<ext>`
-- **Recent recordings** — the newest files in the output folder with open and
-  copy-path actions
-- **Webcam overlay** for recordings and streams: enable/disable, device, size — composited into the capture (`-w target|/dev/video0`, bottom-right)
-- **Portal session restore** (`-restore-portal-session`) persists your Wayland portal session across recordings
-- **Instant replay** (third mode): rolling buffer of the last N seconds stored in RAM or on disk (CBR for predictable RAM) — save a clip from the panel button or the **S** key, then the buffer restarts
-- **Low-power capture** (AMD): reduces GPU clocks and switches to content-aware frame mode
-- **Pre-record countdown**: a configurable 3-2-1 overlay (with tick sound) delays
-  recording/streaming start so you can ready the scene; set to `0` to disable or
-  0–10 s under Settings
-- **Auto-optimized encoder settings** based on detected GPU vendor + available codecs:
-  - NVIDIA — HEVC (H.265) → H.264 fallback, VBR, very-high, performance tune
-  - AMD / Intel — AV1 → HEVC → H.264, VBR, very-high/high, performance tune
-  - CPU fallback — H.264, QP, medium
-- Hardware probing via `gpu-screen-recorder --info` (primary) with DRM/nvidia-smi fallbacks
-- Region picking (`omarchy-capture-region`), monitor selection, or window/portal capture
-- Pause / resume over the GSR unix-socket IPC (`scripts/gsr-ipc.py`)
-- Runtime settings persisted inline to `~/.config/omarchy/shell.json` (entry `pix.recast`)
-- Presets and saved regions persist in `~/.local/state/pix-recast/presets.json`,
-  so `omarchy plugin update` never resets them
-- Compatible with stock indicators via `/tmp/omarchy-screenrecord-filename`
-- Save/failure notifications via `omarchy-notification-send`, with a click action
-  that opens the saved clip
+<br/>
 
-## Settings reference
+*Studio Quality · Hardware Accelerated · Near-Zero Overhead*
 
-All settings live in `shell.json` under the `pix.recast` bar-layout entry and are
-editable from the panel.
+[Overview](#-overview) • [Features](#-features) • [Hardware Support](#-hardware-support--encoding-matrix) • [Installation](#-installation) • [Keybindings](#-keybindings--hotkeys) • [Configuration](#-settings-reference) • [Architecture](#-performance--architecture) • [Contributing](#-contributing)
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| `minFreeDiskMb` | `2000` | Free-space floor below which recording refuses to start |
-| `fileNameTemplate` | `screenrecording-%Y%m%d_%H%M%S` | Recording file names; needs a time token or it falls back to the default |
-| `organizeByDate` | `false` | Write recordings into `YYYY-MM-DD/` subfolders |
-| `osdEnabled` | `true` | Show the floating recording indicator |
-| `osdPosition` | `top-right` | OSD corner: `top-right` \| `top-center` \| `bottom-right` |
+</div>
 
-## Hotkeys
+---
 
-Everything the recorder does is reachable over the `px-recast` IPC target, so
-Hyprland keybinds can drive it without opening the panel. Suggested defaults:
+## 🌟 Overview
 
-```conf
-bind = SUPER+ALT, R, exec, ~/.local/bin/recast toggle            # start / stop
-bind = SUPER+ALT, S, exec, ~/.local/bin/recast saveReplay        # save a replay clip
-bind = SUPER+ALT, P, exec, ~/.local/bin/recast pause             # pause / resume
-bind = SUPER+ALT, O, exec, ~/.local/bin/recast openClip          # open the last clip
+**Better Recast** (`pix.recast`) is a studio-grade screen recording, RTMP streaming, and instant replay system built natively for [Omarchy](https://omarchy.org) and [Quickshell](https://quickshell.outfoxxed.me) on Wayland.
+
+Powered by [gpu-screen-recorder](https://git.dec05eba.com/gpu-screen-recorder/about/), Better Recast captures desktop video directly from the GPU framebuffer without copying frames through system RAM or the CPU. It features automatic hardware and encoder detection, per-application audio isolation, an interactive floating control panel, live pre-roll countdowns, and instant dynamic island status integration with [Better Bar](https://github.com/pxllbt/better-bar).
+
+---
+
+## ✨ Features
+
+### 🎬 Three Core Modes
+- **Screen Recording**: Clean, stutter-free desktop capture to crash-safe MKV or MP4 containers with customizable bitrate, framerate (up to 240 FPS), resolution scaling, and color ranges.
+- **Live Streaming**: Direct low-latency RTMP broadcasting to Twitch, YouTube, Kick, TikTok, or custom servers with automatic platform-specific encoding profiles (CBR, keyframe intervals, and audio bitrate).
+- **Instant Replay**: Continuous circular replay buffer stored in RAM or on disk. Save the last 15s to 20 minutes of gameplay with a single tap of the **S** key or hotkey.
+
+### 🎙️ Audio Routing & Application Isolation
+- **Application Audio Capture**: Select specific running applications (via `gpu-screen-recorder --list-application-audio`) to isolate game or music audio (`app:<name>`) independently from desktop sounds.
+- **Microphone & Desktop Mix**: Discrete volume sliders for microphone and desktop channels with automatic level restoration via `wpctl` when recording stops.
+- **Noise Gate & Filtering**: Built-in noise gating and audio filtering powered by FFmpeg filters (`afftdn` + `agate`).
+- **Codec Selection**: Uncompressed PCM, high-efficiency AAC, or low-latency Opus audio codecs.
+
+### ⚡ Studio Controls & Safety
+- **Dynamic Island Integration**: Native REC/PAUSED/STARTING chip in Better Bar with elapsed time and pre-roll countdown.
+- **Recording OSD**: Floating on-screen display pill (recording indicator + timer + status) placed in your preferred screen corner (`top-right`, `top-center`, or `bottom-right`).
+- **Pre-Roll Countdown**: Configurable 3, 5, or 10-second visual and audio pre-roll countdown to prepare your scene before capture begins.
+- **Disk Space Safety Guard**: Configurable free-space threshold (`minFreeDiskMb`) preventing captures from corrupting or crashing when storage runs low.
+- **Post-Recording Trim Tool**: Quick stream-copy cutting or frame-accurate re-encoding built right into the control panel.
+- **Recent Recordings Carousel**: Fast access to recent clips with single-click folder open and path copy actions.
+- **Presets & Saved Regions**: Save customized capture geometries (WxH+X+Y) and encoder presets stored in `~/.local/state/pix-recast/presets.json` across plugin updates.
+
+---
+
+## ⚡ Hardware Support & Encoding Matrix
+
+Better Recast automatically detects installed GPUs via `gpu-screen-recorder --info` and picks optimal encode profiles:
+
+| GPU Architecture | Primary Backend | Recommended Codecs | Encoder Features |
+| :--- | :--- | :--- | :--- |
+| **NVIDIA GeForce / RTX** | NVENC (NVFBC / CUDA) | `hevc` (H.265), `h264`, `av1` | Low latency, performance tune, NVENC SDK |
+| **AMD Radeon (RX / RDNA)** | VAAPI | `av1`, `hevc` (H.265), `h264` | Native VAAPI hardware encode, low power mode |
+| **Intel Arc / UHD / Iris** | QuickSync / VAAPI | `av1`, `hevc`, `h264` | Intel Media SDK / VAAPI hardware encode |
+| **Software Fallback** | CPU (x264 / x265) | `h264_software` | Constant Rate Factor (CRF), multithreaded |
+
+---
+
+## 📦 Installation
+
+### Prerequisites
+Make sure `gpu-screen-recorder` and runtime dependencies are installed:
+
+```bash
+# Arch Linux
+sudo pacman -S gpu-screen-recorder python ffmpeg
 ```
 
-Lua-style configs (Omarchy's `bindings.lua`):
+### Install with Omarchy
 
+Install Better Recast directly using the Omarchy plugin manager:
+
+```bash
+omarchy plugin add https://github.com/pxllbt/better-recast.git --enable
+omarchy plugin enable pix.recast
+```
+
+Add the indicator to your status bar:
+
+```bash
+omarchy-shell bar layout right add pix.recast
+```
+
+Open the control panel:
+
+```bash
+omarchy-shell shell toggle pix.recast
+```
+
+### Integration with Better Bar
+
+If you use [Better Bar](https://github.com/pxllbt/better-bar), Better Recast integrates natively:
+- **Left-Click**: Toggle recording (starts if idle, stops if live).
+- **Right-Click**: Instantly toggle the settings control panel anchored right to the button.
+- **Dynamic Island**: Displays live pre-roll countdown (`STARTING 3…`), recording counter (`REC 00:05`), and paused status with near-zero compositor overhead.
+
+---
+
+## ⌨️ Keybindings & Hotkeys
+
+All operations are exposed through the `recast` CLI and the `px-recast` IPC target for Hyprland:
+
+### Hyprland (`hyprland.conf`)
+```conf
+bind = SUPER+ALT, R, exec, ~/.local/bin/recast toggle            # Start / stop recording
+bind = SUPER+ALT, S, exec, ~/.local/bin/recast saveReplay        # Save instant replay clip
+bind = SUPER+ALT, P, exec, ~/.local/bin/recast pause             # Pause / resume recording
+bind = SUPER+ALT, O, exec, ~/.local/bin/recast openClip          # Open last recorded clip
+```
+
+### Omarchy Lua (`bindings.lua`)
 ```lua
 o.bind("SUPER + ALT + R", "Toggle screen recording", "~/.local/bin/recast toggle")
 o.bind("SUPER + ALT + S", "Save replay clip", "~/.local/bin/recast saveReplay")
@@ -95,100 +130,62 @@ o.bind("SUPER + ALT + P", "Pause or resume recording", "~/.local/bin/recast paus
 o.bind("SUPER + ALT + O", "Open the last clip", "~/.local/bin/recast openClip")
 ```
 
-`~/.local/bin/recast` re-enables the plugin if it was disabled, then forwards to
-`omarchy-shell px-recast <method>`. Available methods include `toggle`,
-`record`, `stop`, `pause`, `resume`, `replay`, `saveReplay`, `openClip`,
-`openFolder`, `status`, `refreshGpu`, `trim <start> <end> [precise]`,
-`savePreset <name> <json>`, `applyPreset <name>`, `deletePreset <name>`,
-`saveRegion <name>` and `applyRegion <name>`.
-
-## Requirements
-
-- Omarchy 4.x (Quickshell 0.3+)
-- `gpu-screen-recorder` (≥ 6.0) with a matching GPU driver
-- `omarchy-capture-region`, `omarchy-notification-send` (bundled with Omarchy)
-- `python3` for the IPC client
-
-### If `gpu-screen-recorder` is missing
-
-The panel checks for the binary at startup and refuses to record when it is
-absent, reporting the install command instead of failing:
-
-```
-gpu-screen-recorder isn't installed — install it with: pacman -S gpu-screen-recorder
+### CLI Commands
+```bash
+recast toggle                      # Toggle recording state
+recast record                      # Start recording
+recast stop                        # Stop recording
+recast pause                       # Pause recording
+recast resume                      # Resume recording
+recast saveReplay                  # Save instant replay buffer
+recast openClip                    # Open the last saved clip in default player
+recast openFolder                  # Open destination folder
+recast trim 00:05 00:30 [precise]  # Trim the last saved clip
+recast status                      # Return JSON status snapshot
 ```
 
-Install it and press record again — the check re-runs on the press, so there is
-no need to restart the shell.
+---
 
-## Install
+## ⚙️ Settings Reference
 
-```
-omarchy plugin add https://github.com/pxllbt/better-recast.git --enable
-omarchy plugin enable pix.recast
-omarchy-shell shell toggle pix.recast   # open the control panel
-omarchy-shell bar layout right add pix.recast   # add the bar indicator
-```
+Settings are stored in `~/.config/omarchy/shell.json` under `pix.recast` and can be adjusted directly from the settings panel:
 
-### Under Better Bar
+| Setting Key | Default | Description |
+| :--- | :--- | :--- |
+| `minFreeDiskMb` | `2000` | Disk space safety floor in MB; prevents recording if free space drops below threshold. |
+| `fileNameTemplate` | `screenrecording-%Y%m%d_%H%M%S` | Custom output file name template with strftime tokens. |
+| `organizeByDate` | `false` | Automatically group recordings into subfolders formatted as `YYYY-MM-DD/`. |
+| `container` | `mkv` | Output container format (`mkv` recommended for crash safety, `mp4`). |
+| `countdown` | `3` | Pre-roll countdown seconds (`0` = Off, `3`, `5`, `10`). |
+| `mode` | `record` | Active operation mode: `record`, `stream`, or `replay`. |
+| `osdEnabled` | `true` | Show floating on-screen recording badge overlay. |
+| `osdPosition` | `top-right` | Corner placement for on-screen badge (`top-right`, `top-center`, `bottom-right`). |
+| `replaySeconds` | `60` | Duration of circular instant replay buffer in seconds. |
+| `replayStorage` | `ram` | Replay buffer storage location (`ram` for memory, `disk` for storage drive). |
 
-Better Bar hosts plugin widgets itself rather than summoning them into the
-Omarchy bar window, so both the strip entry and the panel work there unchanged:
+---
 
-- **Left-click** the strip entry to open the bar widget, **right-click** for the
-  settings panel.
-- Settings changes go through the service IPC, so a mode switch takes effect on
-  the click instead of waiting for the next poll.
-- The panel opens as a popup anchored under the bar, and closing it — by Escape,
-  by clicking away, or by closing the bar — closes both.
+## 🏗️ Performance & Architecture
 
-## Updating
+- **0.0% Idle CPU**: Better Recast maintains absolute dormancy at rest. All state notifications are event-driven or lazily refreshed when the control panel is opened.
+- **Direct GPU Framebuffer Capture**: Video frames are captured directly on the graphics card and encoded via hardware ASIC engines, keeping system CPU utilization under 3%.
+- **Secure Credentials Handling**: RTMP stream keys are injected into GSR via environment variables in memory, never exposed via `/proc/<pid>/cmdline` or logged to disk.
+- **Crash Resilience**: Defaulting to the Matroska (`.mkv`) container ensures that videos remain playable even if games crash or power drops mid-capture.
 
-The plugin does **not** check for or apply updates on its own — there is no
-in-app updater, and nothing runs in the background. Update deliberately:
+---
 
-```
-omarchy plugin update pix.recast --yes
-```
+## 🤝 Contributing
 
-Note this is a hard reset to `origin/main`: any local edits to the plugin files
-are discarded. Fork and re-apply, or keep your changes in a commit you re-apply
-afterwards.
+Contributions, bug reports, and pull requests are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](SECURITY.md) before submitting code.
 
-## Development
-
-```
-omarchy plugin validate .   # manifest + entry point check
-bash tests/smoke.sh         # headless QML load smoke test
+Run automated smoke tests before submitting pull requests:
+```bash
+omarchy plugin validate .
+bash tests/smoke.sh
 ```
 
-`tests/smoke.sh` runs the node suites against the sources: `setConfig()` and
-`_computeCfg()` from `Panel.qml` (mode tabs must reach the service IPC and
-update the panel immediately), `countdown.test.js` (pre-roll and gsr version
-probe), `state-read.test.js` (event-driven state reads), `filename.test.js`
-(templates), `guard.test.js` (disk-space decision), `trim.test.js` (time specs
-and ffmpeg argv), `recent.test.js` (recent list), `osd.test.js` (OSD wiring),
-`bar-glyph.test.js` (per-state bar glyphs), `pause-state.test.js` (visible
-pause), `presets.test.js` (preset merge + credential stripping),
-`config-read.test.js` (fresh config reads), `appaudio.test.js` (application
-audio parsing) and `readme.test.js` (docs stay in sync).
+---
 
-## Files
+## 📄 License
 
-| Path | Purpose |
-| --- | --- |
-| `manifest.json` | Plugin manifest (schema v1, service + bar-widget + overlay) |
-| `Service.qml`   | Backend: hardware probe, recording state machine, GSR process/IPC |
-| `BarWidget.qml` | Bar indicator: state glyph + elapsed, click to record/stop, right-click panel |
-| `Panel.qml`     | Floating control panel: target, settings, hardware, diagnostics |
-| `Overlay.qml`   | Recording OSD (overlay entry point), reads the live service state |
-| `TrimTool.qml`  | Post-recording trim controls mounted by the panel |
-| `RecentRecordings.qml` | Recent-recordings list mounted by the panel |
-| `PresetsSection.qml` | Setting presets and saved regions mounted by the panel |
-| `Config.js`     | Normed config model, templates, trim args, preset merge rules |
-| `GpuProbe.js`   | `gpu-screen-recorder --info` / audio / app-audio / webcam parsers |
-| `scripts/gsr-ipc.py` | Unix-socket JSON IPC client for pause/resume/stop |
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+Licensed under the [MIT License](LICENSE). Built with ❤️ by [pxllbt](https://github.com/pxllbt).

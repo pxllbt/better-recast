@@ -175,6 +175,16 @@ Item {
         } catch (e) {}
         return s;
     }
+    readonly property string doctorScriptPath: {
+        var url = Qt.resolvedUrl("scripts/recast-doctor.sh");
+        var s = String(url);
+        if (s.indexOf("file://") === 0)
+            s = s.substring(7);
+        try {
+            s = decodeURIComponent(s);
+        } catch (e) {}
+        return s;
+    }
     readonly property string configFilePath: {
         var home = Quickshell.env("HOME");
         if (!home)
@@ -1443,6 +1453,10 @@ Item {
         running: false
     }
     Process {
+        id: doctorProc
+        running: false
+    }
+    Process {
         id: notifProc
     }
 
@@ -1838,6 +1852,13 @@ Item {
 
         function persist(): string {
             root.persistConfig();
+            return "ok";
+        }
+
+        function doctor(flags: string): string {
+            doctorProc.command = ["bash", root.doctorScriptPath].concat(flags ? flags.split(" ") : []);
+            doctorProc.running = false;
+            doctorProc.running = true;
             return "ok";
         }
     }

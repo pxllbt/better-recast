@@ -266,6 +266,14 @@ else
 fi
 
 
+echo_title "Recast doctor"
+if node tests/recast-doctor.test.js; then
+  ok "doctor diagnostic and self-repair engine operational"
+else
+  bad "doctor diagnostic and self-repair engine operational"
+fi
+
+
 echo_title "Elapsed consumers"
 if node tests/elapsed-consumers.test.js; then
   ok "the bar and panel counters are stamped, ticked and monotonic"

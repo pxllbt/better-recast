@@ -1257,6 +1257,19 @@ Item {
             waitForEnd: true
             onStreamFinished: {
                 root._freeKb = Config.parseDfAvailKb(text);
+
+                // Emergency Low-Disk Space Protection (<500MB):
+                // If a recording is actively writing and free space drops below 500MB,
+                // auto-pause immediately so container trailers / moov atom are written,
+                // protecting existing footage from abrupt kernel ENOSPC corruption.
+                if (root.state === "recording" && root._freeKb > 0 && root._freeKb < 500 * 1024) {
+                    root.pause();
+                    var freeMb = Math.floor(root._freeKb / 1024);
+                    errorMessage = "Low Disk Space: Free space is " + freeMb + "MB (<500MB). Recording paused safely to protect your video footage.";
+                    sendNotification("Better Recast", errorMessage, "critical", 10000);
+                    return;
+                }
+
                 if (root._pendingTarget === null)
                     return;
                 var target = root._pendingTarget;
@@ -1276,6 +1289,21 @@ Item {
             }
         }
         command: ["bash", "-c", "df -Pk \"" + outputDir + "\""]
+    }
+
+    // Autonomous low-disk space watchdog: polls free disk space every 10 seconds
+    // while recording to protect existing footage from ENOSPC container corruption.
+    Timer {
+        id: diskMonitorTimer
+        interval: 10000
+        repeat: true
+        running: root.state === "recording" && !root.recordingIsStream
+        onTriggered: {
+            if (!diskProbe.running) {
+                diskProbe.command = ["bash", "-c", "df -Pk \"" + outputDir + "\""];
+                diskProbe.running = true;
+            }
+        }
     }
 
     Process {

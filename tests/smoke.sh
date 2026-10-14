@@ -250,6 +250,14 @@ else
 fi
 
 
+echo_title "Low-disk emergency protection"
+if node tests/disk-emergency.test.js; then
+  ok "capture auto-pauses and finalizes safely when disk space is below 500MB"
+else
+  bad "capture auto-pauses and finalizes safely when disk space is below 500MB"
+fi
+
+
 echo_title "Elapsed consumers"
 if node tests/elapsed-consumers.test.js; then
   ok "the bar and panel counters are stamped, ticked and monotonic"

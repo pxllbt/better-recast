@@ -242,6 +242,14 @@ else
 fi
 
 
+echo_title "Audio device failover"
+if node tests/audio-failover.test.js; then
+  ok "disconnected audio devices fail over to default safely"
+else
+  bad "disconnected audio devices fail over to default safely"
+fi
+
+
 echo_title "Elapsed consumers"
 if node tests/elapsed-consumers.test.js; then
   ok "the bar and panel counters are stamped, ticked and monotonic"

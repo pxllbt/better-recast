@@ -529,7 +529,7 @@ Item {
 
         // Replay buffer writes into the output directory and saves only on
         // command (whole buffer; -restart-replay-on-save clears it after).
-        var args = Config.encodeGsrArgs(config, gpuInfo, target, false, true);
+        var args = Config.encodeGsrArgs(config, gpuInfo, target, false, true, root.audioDevices);
         recordingIsStream = false;
         recordingFile = "";
         _startingReplay = true;
@@ -700,7 +700,7 @@ Item {
     }
 
     function launchRecording(target, streamMode) {
-        var args = Config.encodeGsrArgs(config, gpuInfo, target, streamMode);
+        var args = Config.encodeGsrArgs(config, gpuInfo, target, streamMode, false, root.audioDevices);
         recordingIsStream = streamMode;
 
         if (streamMode) {

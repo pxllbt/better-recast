@@ -170,7 +170,23 @@ function audioSourceName(device) {
   return "device:" + device
 }
 
-function encodeGsrArgs(config, gpuInfo, target, streamMode, replayMode) {
+// Autonomous Audio Failover: verifies whether an explicit device exists in the
+// available device inventory. If disconnected or unplugged mid-session,
+// seamlessly falls back to system default rather than capturing silence or failing.
+function resolveAudioDevice(device, availableList, fallback) {
+  if (!device || device === fallback)
+    return fallback
+  if (!availableList || !Array.isArray(availableList) || availableList.length === 0)
+    return device
+  for (var i = 0; i < availableList.length; i++) {
+    var d = availableList[i]
+    if (d && (d.id === device || d.name === device))
+      return device
+  }
+  return fallback
+}
+
+function encodeGsrArgs(config, gpuInfo, target, streamMode, replayMode, availableAudioDevices) {
   var args = []
   config = resolveProfile(config, gpuInfo)
   streamMode = streamMode === true
@@ -275,8 +291,14 @@ function encodeGsrArgs(config, gpuInfo, target, streamMode, replayMode) {
   // Audio
   if (config.audioEnabled) {
     var devices = []
-    if (config.audioDesktop) devices.push(audioSourceName(config.audioDesktopDevice || "default_output"))
-    if (config.audioMicrophone) devices.push(audioSourceName(config.audioMicDevice || "default_input"))
+    if (config.audioDesktop) {
+      var dDev = resolveAudioDevice(config.audioDesktopDevice || "default_output", availableAudioDevices, "default_output")
+      devices.push(audioSourceName(dDev))
+    }
+    if (config.audioMicrophone) {
+      var mDev = resolveAudioDevice(config.audioMicDevice || "default_input", availableAudioDevices, "default_input")
+      devices.push(audioSourceName(mDev))
+    }
     if (devices.length > 0) {
       args.push("-a", devices.join("|"))
       args.push("-ac", streamMode ? "aac" : (config.audioCodec || "aac"))

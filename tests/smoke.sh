@@ -258,6 +258,14 @@ else
 fi
 
 
+echo_title "Dual-GPU auto-routing"
+if node tests/dual-gpu.test.js; then
+  ok "active DRM render node resolves to connected display output"
+else
+  bad "active DRM render node resolves to connected display output"
+fi
+
+
 echo_title "Elapsed consumers"
 if node tests/elapsed-consumers.test.js; then
   ok "the bar and panel counters are stamped, ticked and monotonic"

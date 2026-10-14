@@ -87,3 +87,43 @@ function parseV4L2Devices(text) {
     devices.push({ path: "", name: "No webcam found" })
   return devices
 }
+
+// Dual-GPU & Hybrid Laptop Auto-Routing:
+// Parses DRM graphics cards and their active output connectors.
+function parseDrmCards(text) {
+  var cards = []
+  var lines = String(text || "").split("\n")
+  var current = null
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim()
+    if (!line) continue
+    if (line.indexOf("card") === 0 && line.indexOf("-") === -1) {
+      var cardName = line.split(":")[0].trim()
+      current = { name: cardName, outputs: [] }
+      cards.push(current)
+    } else if (current && line.indexOf(current.name + "-") === 0) {
+      var connectorPart = line.split(":")[0].substring(current.name.length + 1).trim()
+      var status = line.indexOf("connected") !== -1 ? "connected" : "disconnected"
+      current.outputs.push({ name: connectorPart, status: status })
+    }
+  }
+  return cards
+}
+
+// Maps the active monitor connector (eDP-1, HDMI-A-1, DP-1) to the driving GPU
+function resolveOptimalRenderNode(cards, activeConnector) {
+  if (!cards || !Array.isArray(cards) || cards.length === 0)
+    return null
+  if (!activeConnector)
+    return cards[0]
+  for (var i = 0; i < cards.length; i++) {
+    var c = cards[i]
+    if (c && c.outputs) {
+      for (var j = 0; j < c.outputs.length; j++) {
+        if (c.outputs[j].name === activeConnector)
+          return c
+      }
+    }
+  }
+  return cards[0]
+}

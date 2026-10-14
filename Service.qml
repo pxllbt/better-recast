@@ -416,8 +416,9 @@ Item {
 
     // ── Startup ──
     Component.onCompleted: {
-        mkdirs.command = ["bash", "-c", "mkdir -p " + runtimeDir];
+        mkdirs.command = ["bash", "-c", "mkdir -p " + runtimeDir + " && rm -f " + ipcSocketPath];
         mkdirs.running = true;
+        reapOrphanRecorders();
         refreshGpuInfo();
         refreshMonitors();
         refreshAudioDevices();
@@ -431,6 +432,20 @@ Item {
     }
 
     // ── Public API (used by BarWidget / Panel) ──
+
+    function reapOrphanRecorders() {
+        if (root.state === "idle" || root.state === "error") {
+            orphanReapProc.command = ["bash", "-c",
+                "for pid in $(pgrep -x gpu-screen-recorder 2>/dev/null); do " +
+                "  kill -2 \"$pid\" 2>/dev/null || true; " +
+                "  sleep 1; " +
+                "  kill -9 \"$pid\" 2>/dev/null || true; " +
+                "done; rm -f " + ipcSocketPath
+            ];
+            orphanReapProc.running = false;
+            orphanReapProc.running = true;
+        }
+    }
 
     function refreshGpuInfo(force) {
         if (!force && root.gpuDetected && root.gpuInfo && root.gpuInfo.vendor)
@@ -1394,6 +1409,10 @@ Item {
     }
     Process {
         id: mkdirs
+    }
+    Process {
+        id: orphanReapProc
+        running: false
     }
     Process {
         id: notifProc

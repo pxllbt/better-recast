@@ -234,6 +234,14 @@ else
 fi
 
 
+echo_title "Orphan process reaper"
+if node tests/recast-orphan-reap.test.js; then
+  ok "orphan processes are reaped and dead sockets sanitized on startup"
+else
+  bad "orphan processes are reaped and dead sockets sanitized on startup"
+fi
+
+
 echo_title "Elapsed consumers"
 if node tests/elapsed-consumers.test.js; then
   ok "the bar and panel counters are stamped, ticked and monotonic"

@@ -281,6 +281,13 @@ else
   bad "the bar and panel counters are stamped, ticked and monotonic"
 fi
 
+echo_title "Clipboard gating"
+if node tests/clipboard-gating.test.js; then
+  ok "hidden editable text fields are gated so Qt never queries the clipboard"
+else
+  bad "hidden editable text fields are gated so Qt never queries the clipboard"
+fi
+
 echo_title "Results"
 echo "  passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

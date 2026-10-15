@@ -1095,6 +1095,11 @@ Panel {
                                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
                             }
                             TextField {
+                                // Gate on open(): a live editable TextField makes
+                                // QQuickTextInput query the clipboard on every
+                                // dataChanged (its canPaste bookkeeping), which on
+                                // Wayland blocks the shell on a foreign owner.
+                                readOnly: !root.opened
                                 text: root.cfg.streamUrl || ""
                                 placeholderText: "rtmp://push.tiktokcdn.com/live/"
                                 foreground: root.foreground
@@ -1113,6 +1118,9 @@ Panel {
                                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
                             }
                             TextField {
+                                // See streamUrl: readOnly keeps Qt from querying
+                                // the clipboard while the panel is closed.
+                                readOnly: !root.opened
                                 text: root.cfg.streamKey || ""
                                 password: true
                                 placeholderText: "live stream key"
@@ -1737,6 +1745,9 @@ Panel {
 
                                 TextField {
                                     id: outputDirField
+                                    // See streamUrl: readOnly keeps Qt from
+                                    // querying the clipboard while closed.
+                                    readOnly: !root.opened
                                     Layout.fillWidth: true
                                     text: root.cfg.outputDir || ""
                                     foreground: root.foreground
@@ -1881,6 +1892,9 @@ Panel {
                                     Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
                                 }
                                 TextField {
+                                    // See streamUrl: readOnly keeps Qt from
+                                    // querying the clipboard while closed.
+                                    readOnly: !root.opened
                                     text: root.cfg.fileNameTemplate || ""
                                     placeholderText: "screenrecording-%Y%m%d_%H%M%S"
                                     foreground: root.foreground
